@@ -1,0 +1,26 @@
+# Render.com deployment configuration
+# This file helps Render automatically detect and configure your service
+
+services:
+  - type: web
+    name: warzone-tournament-api
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false  # Set manually in Render dashboard
+      - key: FRONTEND_URL
+        sync: false  # Set manually in Render dashboard
+      - key: SESSION_SECRET
+        sync: false  # Set manually in Render dashboard
+      - key: ADMIN_CODE_1
+        value: MISOKIETI
+      - key: ADMIN_CODE_2
+        value: MISOKIETI8
+      - key: LOG_LEVEL
+        value: info
+      - key: MAX_FILE_SIZE
+        value: 50mb
