@@ -9,15 +9,15 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGODB_URI
-        value: mongodb+srv:mongodb+srv://Herewego:nuLBuCZttSjq72MM@warzonecluster.sfc0v7t.mongodb.net/?retryWrites=true&w=majority&appName=Warzonecluster
+        sync: false
       - key: FRONTEND_URL
         value: https://codesporttournament.netlify.app
       - key: SESSION_SECRET
-        value: warzone-super-secret-key-2025-production
+        sync: false
       - key: ADMIN_CODE_1
-        value: MISOKIETI
+        sync: false
       - key: ADMIN_CODE_2
-        value: MISOKIETI8
+        sync: false
       - key: LOG_LEVEL
         value: info
       - key: MAX_FILE_SIZE

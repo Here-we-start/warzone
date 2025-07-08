@@ -11,6 +11,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { UserType } from './types';
 import { isGlobalSystemActive } from './utils/globalSync';
 
+// Chiavi per il localStorage
+const USER_TYPE_KEY = 'warzone_user_type';
+const USER_ID_KEY = 'warzone_user_id';
+const TOURNAMENT_ID_KEY = 'warzone_tournament_id';
+
 function App() {
   const [userType, setUserType] = useState<UserType>(null);
   const [userIdentifier, setUserIdentifier] = useState('');
@@ -20,6 +25,20 @@ function App() {
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   useEffect(() => {
+    // Recupera i dati di sessione dal localStorage
+    const savedUserType = localStorage.getItem(USER_TYPE_KEY) as UserType;
+    const savedUserId = localStorage.getItem(USER_ID_KEY);
+    const savedTournamentId = localStorage.getItem(TOURNAMENT_ID_KEY);
+    
+    // Se ci sono dati salvati, ripristina la sessione
+    if (savedUserType && savedUserId) {
+      setUserType(savedUserType);
+      setUserIdentifier(savedUserId);
+      if (savedTournamentId) {
+        setCurrentTournament(savedTournamentId);
+      }
+    }
+    
     const initializeApp = async () => {
       console.log('🚀 Inizializzazione Warzone Tournament App...');
       
@@ -69,6 +88,13 @@ function App() {
   }, []);
 
   const handleLogin = (type: UserType, identifier: string, tournamentId?: string) => {
+    // Salva i dati di sessione nel localStorage
+    localStorage.setItem(USER_TYPE_KEY, type as string);
+    localStorage.setItem(USER_ID_KEY, identifier);
+    if (tournamentId) {
+      localStorage.setItem(TOURNAMENT_ID_KEY, tournamentId);
+    }
+    
     setUserType(type);
     setUserIdentifier(identifier);
     if (tournamentId) {
@@ -79,6 +105,11 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Rimuovi i dati di sessione dal localStorage
+    localStorage.removeItem(USER_TYPE_KEY);
+    localStorage.removeItem(USER_ID_KEY);
+    localStorage.removeItem(TOURNAMENT_ID_KEY);
+    
     setUserType(null);
     setUserIdentifier('');
     setCurrentTournament('');
