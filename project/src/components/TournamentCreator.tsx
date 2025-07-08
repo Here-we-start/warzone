@@ -70,33 +70,28 @@ export default function TournamentCreator({
       }
     };
 
+    // Update local state first (like it was working before)
+    setTournaments(prev => {
+      const updatedTournaments = { ...prev, [tournamentId]: newTournament };
+      
+      // Save to localStorage (like before)
+      try {
+        localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+        console.log('✅ Tournament saved to localStorage');
+      } catch (localError) {
+        console.error('❌ Failed to save tournament to localStorage:', localError);
+      }
+      
+      return updatedTournaments;
+    });
+
+    // Try to sync with backend in background (non-blocking)
     try {
-      // First, save to backend/database
       await ApiService.createTournament(newTournament);
-      console.log('✅ Tournament saved to database successfully:', newTournament.name);
-      
-      // Only update local state if database save was successful
-      setTournaments(prev => {
-        const updatedTournaments = { ...prev, [tournamentId]: newTournament };
-        
-        // Also save to localStorage as backup
-        try {
-          localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
-          console.log('✅ Tournament saved to localStorage');
-        } catch (localError) {
-          console.error('❌ Failed to save tournament to localStorage:', localError);
-        }
-        
-        return updatedTournaments;
-      });
-      
+      console.log('✅ Tournament synced to database successfully:', newTournament.name);
     } catch (error) {
-      console.error('❌ Failed to save tournament to database:', error);
-      setIsCreating(false);
-      
-      // Show error message to user
-      alert(`Errore durante la creazione del torneo: ${error.message || 'Errore sconosciuto'}`);
-      return; // Don't continue with the rest of the function
+      console.warn('⚠️ Failed to sync tournament to database (working offline):', error.message);
+      // Don't show error to user - the tournament was created locally
     }
 
     // Log action
