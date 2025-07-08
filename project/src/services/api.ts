@@ -237,6 +237,44 @@ class ApiService {
       return connectionData;
     }
   }
+
+  // Polling system for real-time fallback
+  private static pollingIntervals: Map<string, number> = new Map();
+  
+  static startPolling(key: string, fetchFunction: () => Promise<any>, intervalMs: number = 5000) {
+    // Stop existing polling for this key
+    this.stopPolling(key);
+    
+    // Start new polling
+    const intervalId = setInterval(async () => {
+      try {
+        await fetchFunction();
+        logger.debug(`Polling update: ${key}`);
+      } catch (error) {
+        logger.error(`Polling error for ${key}:`, error);
+      }
+    }, intervalMs);
+    
+    this.pollingIntervals.set(key, intervalId);
+    logger.info(`Started polling for ${key} every ${intervalMs}ms`);
+  }
+  
+  static stopPolling(key: string) {
+    const intervalId = this.pollingIntervals.get(key);
+    if (intervalId) {
+      clearInterval(intervalId);
+      this.pollingIntervals.delete(key);
+      logger.info(`Stopped polling for ${key}`);
+    }
+  }
+  
+  static stopAllPolling() {
+    this.pollingIntervals.forEach((intervalId, key) => {
+      clearInterval(intervalId);
+      logger.info(`Stopped polling for ${key}`);
+    });
+    this.pollingIntervals.clear();
+  }
 }
 
 export default ApiService;
