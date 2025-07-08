@@ -8,11 +8,11 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGODB_URI
-        sync: false  # Set manually in Render dashboard
+        value: mongodb+srv://chahbounibadr:siritna3si@cluster0.dfidjct.mongodb.net/warzone-tournaments?retryWrites=true&w=majority
       - key: FRONTEND_URL
-        sync: false  # Set manually in Render dashboard
+        value: https://codesporttournament.netlify.app
       - key: SESSION_SECRET
-        sync: false  # Set manually in Render dashboard
+        value: warzone-super-secret-key-2025-production
       - key: ADMIN_CODE_1
         value: MISOKIETI
       - key: ADMIN_CODE_2

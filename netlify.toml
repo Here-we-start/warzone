@@ -1,0 +1,57 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  
+[build.environment]
+  NODE_VERSION = "18"
+  VITE_API_URL = "https://warzone-tournament-api-xfut.onrender.com"
+  VITE_SOCKET_URL = "https://warzone-tournament-api-xfut.onrender.com"
+  
+# Redirect API calls to your backend on Render
+[[redirects]]
+  from = "/api/*"
+  to = "https://warzone-tournament-api-xfut.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# SPA redirect - must be LAST
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Cache for static assets
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# No cache for HTML
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[build.processing]
+  skip_processing = false
+
+[build.processing.css]
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  bundle = true
+  minify = true
