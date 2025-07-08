@@ -238,14 +238,13 @@ logger.info('Connecting to MongoDB...', {
 });
 
 mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+  // Rimuovi le opzioni non supportate
   maxPoolSize: 10,
-  serverSelectionTimeoutMS: 30000,  // ← Aumentato da 5000 a 30000
+  serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
-  connectTimeoutMS: 30000,          // ← Aggiunto
-  bufferMaxEntries: 0,
-  bufferCommands: false,
+  connectTimeoutMS: 30000,
+ 
+
 })
 .then(() => {
   console.log('✅ MongoDB connected successfully!');
@@ -258,8 +257,8 @@ mongoose.connect(MONGODB_URI, {
 .catch(err => {
   console.error('❌ MongoDB connection failed:', err.message);
   logger.error('MongoDB connection error', { error: err.message, stack: err.stack });
-  // NON uscire immediatamente - lascia che il server si avvii
-  // process.exit(1); ← Commenta questa riga temporaneamente
+  // Commenta temporaneamente per permettere l'avvio del server
+  // process.exit(1);
 });
 
 // Enhanced connection monitoring
