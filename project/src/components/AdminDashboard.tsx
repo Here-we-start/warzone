@@ -45,6 +45,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showLoginCodes, setShowLoginCodes] = useState(false);
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const approveSubmission = (submissionId: string) => {
     const submission = pendingSubmissions.find(s => s.id === submissionId);
@@ -504,9 +505,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     );
   };
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string, id?: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
@@ -515,6 +520,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
     }
   };
 
@@ -933,11 +942,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               <div className="p-4 bg-ice-blue/10 border border-ice-blue/30 rounded-lg">
                 <h3 className="text-ice-blue font-mono font-bold mb-3">CODICI AMMINISTRATORE</h3>
                 <div className="space-y-2">
-                  {['********', '********'].map((code, index) => (
+                  {['MISOKIETI', 'MISOKIETI8'].map((code, index) => (
                     <div key={code} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                       <span className="text-white font-mono text-lg">{code}</span>
                       <button
-                        onClick={() => copyToClipboard(code)}
+                        onClick={() => copyToClipboard(code, `admin-${index}`)}
                         className="flex items-center space-x-1 px-3 py-1 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded text-sm font-mono hover:bg-ice-blue/30 transition-colors"
                       >
                         <Copy className="w-3 h-3" />
@@ -959,11 +968,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="text-purple-400/60 text-sm font-mono">{manager.name}</div>
                       </div>
                       <button
-                        onClick={() => copyToClipboard(manager.code)}
+                        onClick={() => copyToClipboard(manager.code, `manager-${manager.code}`)}
                         className="flex items-center space-x-1 px-3 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-sm font-mono hover:bg-purple-500/30 transition-colors"
                       >
                         <Copy className="w-3 h-3" />
-                        <span>COPIA</span>
+                        <span>{copied === `manager-${manager.code}` ? 'COPIATO!' : 'COPIA'}</span>
                       </button>
                     </div>
                   ))}
@@ -989,11 +998,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="text-green-400/60 text-sm font-mono">{team.name}</div>
                       </div>
                       <button
-                        onClick={() => copyToClipboard(team.code)}
+                        onClick={() => copyToClipboard(team.code, `team-${team.code}`)}
                         className="flex items-center space-x-1 px-3 py-1 bg-green-500/20 border border-green-500/50 text-green-400 rounded text-sm font-mono hover:bg-green-500/30 transition-colors"
                       >
                         <Copy className="w-3 h-3" />
-                        <span>COPIA</span>
+                        <span>{copied === `team-${team.code}` ? 'COPIATO!' : 'COPIA'}</span>
                       </button>
                     </div>
                   ))}
