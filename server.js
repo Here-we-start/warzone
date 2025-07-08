@@ -4,7 +4,7 @@ app.get('/api/audit-logs', async (req, res) => {
     const filter = tournamentId ? { tournamentId } : {};
     const auditLogs = await AuditLog.find(filter)
       .sort({ timestamp: -1 })
-      parseInt(limit)
+      .limit(parseInt(limit))
       .lean();
     res.json({ success: true, auditLogs });
   } catch (error) {
