@@ -189,3 +189,7 @@
 {"contentLength":"248","duration":"2ms","ip":"127.0.0.1","level":"info","message":"HTTP Request","method":"GET","service":"warzone-tournament-api","statusCode":200,"timestamp":"2025-07-08T16:18:29.019Z","url":"/","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"}
 {"database":"Local MongoDB","environment":"development","level":"info","message":"Connecting to MongoDB...","service":"warzone-tournament-api","timestamp":"2025-07-08T16:26:19.513Z"}
 {"environment":"development","frontendUrl":"Not set","level":"info","message":"Server started","mongodb":"Connecting...","port":5000,"service":"warzone-tournament-api","timestamp":"2025-07-08T16:26:19.550Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"laumstVr9LmK8Y1SAAAI","timestamp":"2025-07-08T16:26:21.470Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"_FDbAqcII9PJbkL5AAAJ","timestamp":"2025-07-08T16:26:21.471Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"f44fwQBgkPu3uEXcAAAK","timestamp":"2025-07-08T16:26:21.472Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"8I1z_QIUNIDb3WYpAAAL","timestamp":"2025-07-08T16:26:21.472Z"}
