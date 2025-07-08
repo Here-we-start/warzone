@@ -5,7 +5,7 @@ services:
   - type: web
     name: warzone-tournament-api
     env: node
-    buildCommand: buildCommand: ls -R && npm install
+    buildCommand: ls -R && npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
