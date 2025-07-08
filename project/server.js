@@ -248,8 +248,7 @@ const connectToMongoDB = async () => {
       serverSelectionTimeoutMS: 10000, // Reduced timeout
       socketTimeoutMS: 45000,
       connectTimeoutMS: 10000, // Reduced timeout
-      bufferMaxEntries: 0, // Disable mongoose buffering
-      bufferCommands: false, // Disable mongoose buffering
+      
     });
     
     console.log('✅ MongoDB connected successfully!');
