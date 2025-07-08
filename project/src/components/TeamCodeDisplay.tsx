@@ -14,9 +14,19 @@ export default function TeamCodeDisplay({ teamName, teamCode, onClose }: TeamCod
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(teamCode);
+      console.log('✅ Codice team copiato:', teamCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = teamCode;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
       console.error('Failed to copy:', error);
     }
   };
@@ -43,7 +53,7 @@ export default function TeamCodeDisplay({ teamName, teamCode, onClose }: TeamCod
             <div className="text-3xl font-bold text-ice-blue font-mono tracking-wider mb-2">
               {teamCode}
             </div>
-            <div className="text-ice-blue/60 text-sm font-mono">
+            <div className="text-ice-blue/80 text-sm font-mono">
               CODICE ACCESSO TEAM
             </div>
           </div>
@@ -70,8 +80,9 @@ export default function TeamCodeDisplay({ teamName, teamCode, onClose }: TeamCod
           <div className="text-sm text-ice-blue/60 font-mono bg-black/20 rounded-lg p-4">
             <div className="mb-2 text-ice-blue font-bold">ISTRUZIONI:</div>
             <div>1. Condividi questo codice con il team</div>
-            <div>2. Il team userà questo codice per accedere</div>
+            <div>2. Il team userà questo codice per accedere al sistema</div>
             <div>3. Il codice è valido fino alla fine del torneo</div>
+            <div className="mt-2 text-ice-blue">Codice: <span className="font-bold">{teamCode}</span></div>
           </div>
         </div>
 

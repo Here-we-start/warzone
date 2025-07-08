@@ -149,6 +149,22 @@ export default function TournamentManagement({
   const registerTeam = () => {
     if (!teamName.trim()) return;
     
+    // Check if team already exists in this slot
+    const existingTeam = Object.values(teams).find(t => 
+      t.tournamentId === tournamentId && 
+      t.lobbyNumber === selectedLobby && 
+      t.lobby === getTeamKey(selectedLobby, selectedSlot)
+    );
+    
+    if (existingTeam) {
+      if (!confirm(`Slot già occupato da "${existingTeam.name}". Vuoi sovrascrivere?`)) {
+        return;
+      }
+      
+      // Remove existing team first
+      removeTeam(existingTeam.id);
+    }
+    
     const key = getTeamKey(selectedLobby, selectedSlot);
     const code = generateUniqueTeamCode(teams);
     
@@ -164,6 +180,22 @@ export default function TournamentManagement({
 
     setTeams(prev => ({ ...prev, [key]: newTeam }));
     setTeamName('');
+    
+    // Broadcast team creation for real-time updates
+    if ('BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('warzone-global-sync');
+        channel.postMessage({
+          type: 'team-created',
+          teamId: key,
+          team: newTeam,
+          timestamp: Date.now()
+        });
+        channel.close();
+      } catch (error) {
+        console.warn('Team broadcast failed:', error);
+      }
+    }
     
     // Show the generated code
     setShowTeamCode({ name: teamName.trim(), code });

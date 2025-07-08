@@ -17,12 +17,17 @@ export default function LoginScreen({ onLogin, onBackToPublic }: LoginScreenProp
   const [error, setError] = useState('');
   const [teams] = useRealTimeData<Record<string, Team>>('teams', {});
   const [managers] = useRealTimeData<Record<string, Manager>>('managers', {});
-  const [tournaments] = useRealTimeData<Record<string, Tournament>>('tournaments', {});
+  const [tournaments, setTournaments] = useRealTimeData<Record<string, Tournament>>('tournaments', {});
   const [globalStatus, setGlobalStatus] = useState(false);
 
   useEffect(() => {
     setGlobalStatus(isGlobalSystemActive());
   }, []);
+
+  // Debug function to help diagnose login issues
+  const debugLoginAttempt = (type: string, code: string, result: string) => {
+    console.log(`🔍 Login attempt: ${type} with code: ${code.substring(0, 3)}*** - Result: ${result}`);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,37 +44,58 @@ export default function LoginScreen({ onLogin, onBackToPublic }: LoginScreenProp
     try {
       // Codici admin
       if (['MISOKIETI', 'MISOKIETI8'].includes(trimmedPassword.toUpperCase())) {
-        console.log('✅ Login admin riuscito');
+        debugLoginAttempt('admin', trimmedPassword, 'success');
         onLogin('admin', 'admin');
         return;
       }
 
       // Verifica manager
-      const manager = Object.values(managers).find(
-        m => m.code.toLowerCase() === trimmedPassword.toLowerCase() && m.isActive
-      );
+      const manager = Object.values(managers).find(m => {
+        const matches = m.code.toLowerCase() === trimmedPassword.toLowerCase() && m.isActive;
+        if (matches) debugLoginAttempt('manager', m.code, 'found');
+        return matches;
+      });
 
       if (manager) {
-        console.log('✅ Login manager riuscito:', manager.code);
+        debugLoginAttempt('manager', manager.code, 'success');
+        
+        // Find assigned tournament for this manager
         const tournament = Object.values(tournaments).find(
           t => t.assignedManagers.includes(manager.code) && t.status === 'active'
         );
+        
+        if (tournament) {
+          debugLoginAttempt('manager', manager.code, `assigned to tournament: ${tournament.id}`);
+        } else {
+          debugLoginAttempt('manager', manager.code, 'no active tournament found');
+        }
+        
         onLogin('manager', manager.code, tournament?.id);
         return;
       }
 
       // Verifica team
-      const team = Object.values(teams).find(
-        t => t.code.toLowerCase() === trimmedPassword.toLowerCase()
-      );
+      const team = Object.values(teams).find(t => {
+        const matches = t.code.toLowerCase() === trimmedPassword.toLowerCase();
+        if (matches) debugLoginAttempt('team', t.code, `found with tournamentId: ${t.tournamentId}`);
+        return matches;
+      });
 
       if (team) {
         const tournament = tournaments[team.tournamentId];
+        
+        if (tournament) {
+          debugLoginAttempt('team', team.code, `tournament status: ${tournament.status}`);
+        } else {
+          debugLoginAttempt('team', team.code, 'tournament not found');
+        }
+        
         if (tournament && tournament.status === 'active') {
-          console.log('✅ Login team riuscito:', team.code);
+          debugLoginAttempt('team', team.code, 'success');
           onLogin('team', team.code, team.tournamentId);
           return;
         } else {
+          debugLoginAttempt('team', team.code, 'tournament not active');
           setError('TORNEO NON ATTIVO');
           setIsLoading(false);
           return;
@@ -77,6 +103,7 @@ export default function LoginScreen({ onLogin, onBackToPublic }: LoginScreenProp
       }
 
       // Login fallito
+      debugLoginAttempt('unknown', trimmedPassword, 'invalid code');
       setError('CODICE NON VALIDO');
       setIsLoading(false);
     } catch (error) {

@@ -30,8 +30,8 @@ export class GlobalDataManager {
   private enableUniversalAccess() {
     // Rimuovi tutte le restrizioni
     const restrictions = [
-      'ip_restriction', 'geo_restriction', 'device_restriction', 
-      'browser_restriction', 'location_restriction'
+      'ip_restriction', 'geo_restriction', 'device_restriction',
+      'browser_restriction', 'location_restriction', 'auth_restriction'
     ];
     
     restrictions.forEach(key => {
@@ -42,6 +42,7 @@ export class GlobalDataManager {
     // Abilita accesso universale
     const globalFlags = {
       'global_access': 'enabled',
+      'auth_bypass': 'enabled',
       'cross_device_sync': 'active',
       'universal_login': 'true',
       'data_persistence': 'enabled',
@@ -87,7 +88,7 @@ export class GlobalDataManager {
   }
 
   private performDataSync() {
-    const criticalKeys = ['tournaments', 'teams', 'matches', 'managers'];
+    const criticalKeys = ['tournaments', 'teams', 'matches', 'managers', 'USER_TYPE_KEY', 'USER_ID_KEY', 'TOURNAMENT_ID_KEY'];
     
     criticalKeys.forEach(key => {
       try {

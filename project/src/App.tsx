@@ -91,6 +91,7 @@ function App() {
 
   const handleLogin = (type: UserType, identifier: string, tournamentId?: string) => {
     // Salva i dati di sessione nel localStorage
+    console.log(`🔑 Saving login data: ${type} - ${identifier} - ${tournamentId || 'no tournament'}`);
     localStorage.setItem(USER_TYPE_KEY, type as string);
     localStorage.setItem(USER_ID_KEY, identifier);
     if (tournamentId) {
@@ -101,9 +102,11 @@ function App() {
     setUserIdentifier(identifier);
     if (tournamentId) {
       setCurrentTournament(tournamentId);
+      console.log(`🏆 Setting current tournament: ${tournamentId}`);
     }
     
-    console.log(`✅ Login: ${type} - ${identifier}${isOfflineMode ? ' (offline)' : ''}`);
+    console.log(`✅ Login successful: ${type} - ${identifier}${isOfflineMode ? ' (offline)' : ''}`);
+    setShowLogin(false); // Ensure login screen is hidden after successful login
   };
 
   const handleLogout = () => {
@@ -116,8 +119,10 @@ function App() {
     setUserIdentifier('');
     setCurrentTournament('');
     setShowLogin(false);
+    console.log('👋 Logout completed - session data cleared');
     
-    console.log('👋 Logout completato');
+    // Force reload to clear any cached state
+    // window.location.reload();
   };
 
   if (!isInitialized) {
