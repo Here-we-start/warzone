@@ -204,3 +204,7 @@
 {"ip":"127.0.0.1","level":"info","message":"User disconnected","reason":"transport close","service":"warzone-tournament-api","socketId":"_FDbAqcII9PJbkL5AAAJ","timestamp":"2025-07-08T16:28:03.885Z"}
 {"ip":"127.0.0.1","level":"info","message":"User disconnected","reason":"transport close","service":"warzone-tournament-api","socketId":"f44fwQBgkPu3uEXcAAAK","timestamp":"2025-07-08T16:28:03.885Z"}
 {"ip":"127.0.0.1","level":"info","message":"User disconnected","reason":"transport close","service":"warzone-tournament-api","socketId":"8I1z_QIUNIDb3WYpAAAL","timestamp":"2025-07-08T16:28:03.886Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"OGHynKUD1Iif29WrAAAU","timestamp":"2025-07-08T16:28:05.110Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"k_d9eh5kW3b_GO6KAAAV","timestamp":"2025-07-08T16:28:05.111Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"BmZnyWIMO6nLiW-iAAAW","timestamp":"2025-07-08T16:28:05.112Z"}
+{"ip":"127.0.0.1","level":"info","message":"User connected","service":"warzone-tournament-api","socketId":"wZmqq2s0xo6MMmvIAAAX","timestamp":"2025-07-08T16:28:05.112Z"}
