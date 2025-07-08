@@ -86,12 +86,16 @@ export default function TournamentCreator({
     });
 
     // Try to sync with backend in background (non-blocking)
-    try {
-      await ApiService.createTournament(newTournament);
-      console.log('✅ Tournament synced to database successfully:', newTournament.name);
-    } catch (error) {
-      console.warn('⚠️ Failed to sync tournament to database (working offline):', error.message);
-      // Don't show error to user - the tournament was created locally
+    if (typeof ApiService?.createTournament === 'function') {
+      try {
+        await ApiService.createTournament(newTournament);
+        console.log('✅ Tournament synced to database successfully:', newTournament.name);
+      } catch (error) {
+        console.warn('⚠️ Failed to sync tournament to database (working offline):', error.message);
+        // Don't show error to user - the tournament was created locally
+      }
+    } else {
+      console.log('⚠️ ApiService not available, tournament saved locally only');
     }
 
     // Log action
