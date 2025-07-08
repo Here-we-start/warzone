@@ -814,7 +814,10 @@ app.delete('/api/matches/:id', async (req, res) => {
     res.json({ success: true, message: 'Match deleted successfully' });
   } catch (error) {
     logger.error('Delete match error', { error: error.message, matchId: req.params.id, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to delete match' });
+    res.status(500).j
+  }
+}
+)son({ success: false, error: 'Failed to delete match' });
   }
 });
 
