@@ -1,11 +1,15 @@
 [build]
+  command = "npm run build"
   publish = "dist"
-  command = "npm install && npm run build"
-
+  
 [build.environment]
   NODE_VERSION = "18"
-  NPM_CONFIG_PRODUCTION = "false"
-
+  
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  
 [[headers]]
   for = "/*"
   [headers.values]
