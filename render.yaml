@@ -2,8 +2,8 @@ services:
   - type: web
     name: warzone-tournament-api
     env: node
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: ./build.sh
+    startCommand: ./start.sh
     rootDir: project
     envVars:
       - key: NODE_ENV
