@@ -11,15 +11,18 @@ interface TournamentCreatorProps {
   onClose: () => void;
   auditLogs: AuditLog[];
   setAuditLogs: (logs: AuditLog[] | ((prev: AuditLog[]) => AuditLog[])) => void;
+  tournaments: Record<string, Tournament>;
+  setTournaments: (tournaments: Record<string, Tournament> | ((prev: Record<string, Tournament>) => Record<string, Tournament>)) => void;
 }
 
 export default function TournamentCreator({ 
   isOpen, 
   onClose, 
   auditLogs, 
-  setAuditLogs 
+  setAuditLogs,
+  tournaments,
+  setTournaments
 }: TournamentCreatorProps) {
-  const [tournaments, setTournaments] = useRealTimeData<Record<string, Tournament>>('tournaments', {});
   const [managers] = useRealTimeData<Record<string, Manager>>('managers', {});
   
   const [tournamentName, setTournamentName] = useState('');
@@ -67,6 +70,7 @@ export default function TournamentCreator({
       }
     };
 
+    // Update tournaments using props instead of local state
     setTournaments(prev => ({ ...prev, [tournamentId]: newTournament }));
 
     // Sync with backend
