@@ -1,4 +1,5 @@
 @@ .. @@
+  const [copied, setCopied] = useState<string | null>(null);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -21,11 +22,11 @@
                       <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                         <span className="text-white font-mono text-lg">{code}</span>
                         <button
-                          onClick={() => copyToClipboard(code)}
+                          onClick={() => copyToClipboard(`admin-${index}`)}
                           className="flex items-center space-x-1 px-3 py-1 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded text-sm font-mono hover:bg-ice-blue/30 transition-colors"
                         >
                           <Copy className="w-3 h-3" />
-                          <span>{copied === code ? 'COPIATO!' : 'COPIA'}</span>
+                          <span>{copied === `admin-${index}` ? 'COPIATO!' : 'COPIA'}</span>
                         <div className="text-white font-mono text-lg">{manager.code}</div>
                         <div className="text-purple-400/60 text-sm font-mono">{manager.name}</div>
                       </div>
