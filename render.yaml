@@ -9,7 +9,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGODB_URI
-        value: mongodb+srv://chahbounibadr:siritna3si@cluster0.dfidjct.mongodb.net/warzone-tournaments?retryWrites=true&w=majority
+        value: mongodb+srv:mongodb+srv://Herewego:nuLBuCZttSjq72MM@warzonecluster.sfc0v7t.mongodb.net/?retryWrites=true&w=majority&appName=Warzonecluster
       - key: FRONTEND_URL
         value: https://codesporttournament.netlify.app
       - key: SESSION_SECRET
