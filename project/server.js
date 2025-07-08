@@ -814,10 +814,7 @@ app.delete('/api/matches/:id', async (req, res) => {
     res.json({ success: true, message: 'Match deleted successfully' });
   } catch (error) {
     logger.error('Delete match error', { error: error.message, matchId: req.params.id, ip: req.ip });
-    res.status(500).j
-  }
-}
-)son({ success: false, error: 'Failed to delete match' });
+    res.status(500).json({ success: false, error: 'Failed to delete match' });
   }
 });
 
@@ -1160,6 +1157,24 @@ app.get('/', (req, res) => {
   res.json({
     message: '🎮 Warzone Tournament API',
     status: 'running',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV,
+    endpoints: {
+      health: '/api/health',
+      auditLogs: '/api/audit-logs',
+      login: '/api/login'
+    },
+    documentation: 'API successfully deployed on Render'
+  });
+});
+
+// Health check endpoint with enhanced information
+app.get('/api/health', (req, res) => {
+  // ... il resto del codice health check
+});
+
+// Health check endpoint with enhanced information
+app.get('/api/health', (req, res) => {
   try {
     console.log('🔍 Health check requested');
     console.log('📊 MongoDB state:', mongoose.connection.readyState);
