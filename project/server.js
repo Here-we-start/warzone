@@ -237,15 +237,50 @@ logger.info('Connecting to MongoDB...', {
   database: MONGODB_URI.includes('mongodb.net') ? 'MongoDB Atlas (Cloud)' : 'Local MongoDB'
 });
 
-mongoose.connect(MONGODB_URI, {
-  // Rimuovi le opzioni non supportate
-  maxPoolSize: 10,
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 45000,
-  connectTimeoutMS: 30000,
- 
+// Enhanced MongoDB connection with better error handling
+const connectToMongoDB = async () => {
+  try {
+    console.log('🔄 Attempting MongoDB connection...');
+    console.log('📍 Connection string type:', MONGODB_URI.includes('mongodb+srv') ? 'Atlas (Cloud)' : 'Local/Other');
+    
+    await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10000, // Reduced timeout
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000, // Reduced timeout
+      bufferMaxEntries: 0, // Disable mongoose buffering
+      bufferCommands: false, // Disable mongoose buffering
+    });
+    
+    console.log('✅ MongoDB connected successfully!');
+    logger.info('Connected to MongoDB', {
+      database: mongoose.connection.db?.databaseName || 'unknown',
+      host: mongoose.connection.host,
+      port: mongoose.connection.port
+    });
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error.message);
+    logger.error('MongoDB connection error', { error: error.message, stack: error.stack });
+    
+    // Don't exit in development - allow server to start for testing
+    if (process.env.NODE_ENV === 'production') {
+      console.error('💥 Exiting due to MongoDB connection failure in production');
+      process.exit(1);
+    } else {
+      console.warn('⚠️  Continuing without MongoDB in development mode');
+      console.warn('📝 To fix this:');
+      console.warn('   1. Set up MongoDB Atlas: npm run setup:atlas');
+      console.warn('   2. Or install local MongoDB');
+      console.warn('   3. Update MONGODB_URI in .env file');
+    }
+  }
+};
 
-})
+// Connect to MongoDB
+connectToMongoDB();
+
+// Remove the old connection code
+/*
 .then(() => {
   console.log('✅ MongoDB connected successfully!');
   logger.info('Connected to MongoDB', {
@@ -260,6 +295,7 @@ mongoose.connect(MONGODB_URI, {
   // Commenta temporaneamente per permettere l'avvio del server
   // process.exit(1);
 });
+*/</brokentag>
 
 // Enhanced connection monitoring
 mongoose.connection.on('error', err => {
@@ -473,6 +509,16 @@ io.on('connection', (socket) => {
 // Get all tournaments
 app.get('/api/tournaments', async (req, res) => {
   try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      logger.warn('MongoDB not connected, returning empty tournaments list', { ip: req.ip });
+      return res.json({ 
+        success: true,
+        tournaments: [],
+        warning: 'Database not connected. Please check MongoDB configuration.'
+      });
+    }
+    
     const tournaments = await Tournament.find({ status: { $ne: 'archived' } })
       .sort({ createdAt: -1 })
       .limit(50)
@@ -486,6 +532,16 @@ app.get('/api/tournaments', async (req, res) => {
     });
   } catch (error) {
     logger.error('Get tournaments error', { error: error.message, ip: req.ip });
+    
+    // Provide more specific error handling
+    if (error.message.includes('buffering timed out')) {
+      return res.status(503).json({ 
+        success: false,
+        error: 'Database connection timeout. Please check MongoDB configuration.',
+        details: 'MongoDB connection is not established. Run "npm run setup:atlas" to configure.'
+      });
+    }
+    
     res.status(500).json({ 
       success: false,
       error: 'Failed to fetch tournaments' 
@@ -1180,17 +1236,26 @@ app.get('/api/health', (req, res) => {
     console.log('📊 MongoDB state:', mongoose.connection.readyState);
     console.log('📊 Process uptime:', process.uptime());
     
+    const mongoStates = {
+      0: 'disconnected',
+      1: 'connected',
+      2: 'connecting',
+      3: 'disconnecting'
+    };
+    
     const healthData = {
       success: true,
-      status: 'healthy',
+      status: mongoose.connection.readyState === 1 ? 'healthy' : 'degraded',
       timestamp: Date.now(),
       environment: process.env.NODE_ENV || 'development',
-      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      mongodb: mongoStates[mongoose.connection.readyState] || 'unknown',
       mongoState: mongoose.connection.readyState,
+      mongoUri: process.env.MONGODB_URI ? 'configured' : 'not configured',
       version: process.env.npm_package_version || '1.0.0',
       uptime: Math.floor(process.uptime()),
       memory: process.memoryUsage(),
-      nodeVersion: process.version
+      nodeVersion: process.version,
+      warnings: mongoose.connection.readyState !== 1 ? ['MongoDB not connected'] : []
     };
     
     console.log('✅ Health data prepared:', healthData.status);
