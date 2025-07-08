@@ -7,7 +7,7 @@
     "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
     "server:dev": "nodemon server.js",
     "client:dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && echo 'Build completed successfully'",
     "start": "node server.js",
     "lint": "eslint .",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
