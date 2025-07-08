@@ -53,17 +53,24 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     const loadTournamentsFromDatabase = async () => {
       try {
         console.log('📡 Loading tournaments from database...');
-        const tournamentsFromDB = await ApiService.getAllTournaments();
         
-        if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
-          setTournaments(tournamentsFromDB);
-          localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
-          console.log('✅ Tournaments loaded from database:', Object.keys(tournamentsFromDB).length);
+        // Check if ApiService exists and has the method
+        if (typeof ApiService?.getAllTournaments === 'function') {
+          const tournamentsFromDB = await ApiService.getAllTournaments();
+          
+          if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
+            setTournaments(tournamentsFromDB);
+            localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
+            console.log('✅ Tournaments loaded from database:', Object.keys(tournamentsFromDB).length);
+          } else {
+            console.log('📭 No tournaments found in database');
+          }
         } else {
-          console.log('📭 No tournaments found in database');
+          console.log('⚠️ ApiService not available, loading from localStorage only');
+          throw new Error('ApiService not configured');
         }
       } catch (error) {
-        console.error('❌ Failed to load tournaments from database:', error);
+        console.warn('⚠️ Database not available, loading from localStorage:', error.message);
         // Fallback to localStorage if database fails
         try {
           const localTournaments = localStorage.getItem('tournaments');
