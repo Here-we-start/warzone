@@ -56,7 +56,7 @@ export default function TournamentCreator({
       id: tournamentId,
       name: tournamentName.trim(),
       type: tournamentType,
-      status: 'active', // Already set to active by default
+      status: 'active',
       startDate: finalStartDate,
       startTime: finalStartTime,
       createdAt: Date.now(),
@@ -70,36 +70,33 @@ export default function TournamentCreator({
       }
     };
 
-    // Update tournaments using props instead of local state
-    setTournaments(prev => ({ ...prev, [tournamentId]: newTournament }));
-
-    // Emit tournament creation event to ensure real-time visibility
-    if ('BroadcastChannel' in window) {
-      try {
-        const channel = new BroadcastChannel('warzone-global-sync');
-        channel.postMessage({
-          type: 'tournament-created',
-          tournamentId,
-          tournament: newTournament,
-          timestamp: Date.now()
-        });
-        channel.close();
-      } catch (error) {
-        console.warn('Tournament broadcast failed:', error);
-      }
-    }
-
-    // Sync with backend
     try {
+      // First, save to backend/database
       await ApiService.createTournament(newTournament);
-      console.log('✅ Tournament created successfully:', newTournament.name);
+      console.log('✅ Tournament saved to database successfully:', newTournament.name);
+      
+      // Only update local state if database save was successful
+      setTournaments(prev => {
+        const updatedTournaments = { ...prev, [tournamentId]: newTournament };
+        
+        // Also save to localStorage as backup
+        try {
+          localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+          console.log('✅ Tournament saved to localStorage');
+        } catch (localError) {
+          console.error('❌ Failed to save tournament to localStorage:', localError);
+        }
+        
+        return updatedTournaments;
+      });
+      
     } catch (error) {
-      console.error('❌ Failed to create tournament:', error);
-      // Optionally remove from local state if backend fails
-      // setTournaments(prev => {
-      //   const { [tournamentId]: removed, ...rest } = prev;
-      //   return rest;
-      // });
+      console.error('❌ Failed to save tournament to database:', error);
+      setIsCreating(false);
+      
+      // Show error message to user
+      alert(`Errore durante la creazione del torneo: ${error.message || 'Errore sconosciuto'}`);
+      return; // Don't continue with the rest of the function
     }
 
     // Log action
