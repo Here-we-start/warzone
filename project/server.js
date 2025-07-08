@@ -1154,30 +1154,39 @@ app.post('/api/auth/login', [
 
 // Health check endpoint with enhanced information
 app.get('/api/health', (req, res) => {
-  const healthData = {
-    success: true,
-    status: 'healthy',
-    timestamp: Date.now(),
-    environment: process.env.NODE_ENV || 'development',
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    version: process.env.npm_package_version || '1.0.0',
-    uptime: Math.floor(process.uptime()),
-    memory: process.memoryUsage(),
-    nodeVersion: process.version
-  };
-  
-  logger.info('Health check', { ip: req.ip, status: healthData.status });
-  res.json(healthData);
+  try {
+    console.log('🔍 Health check requested');
+    console.log('📊 MongoDB state:', mongoose.connection.readyState);
+    console.log('📊 Process uptime:', process.uptime());
+    
+    const healthData = {
+      success: true,
+      status: 'healthy',
+      timestamp: Date.now(),
+      environment: process.env.NODE_ENV || 'development',
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      mongoState: mongoose.connection.readyState,
+      version: process.env.npm_package_version || '1.0.0',
+      uptime: Math.floor(process.uptime()),
+      memory: process.memoryUsage(),
+      nodeVersion: process.version
+    };
+    
+    console.log('✅ Health data prepared:', healthData.status);
+    
+    // Commenta temporaneamente il logger se dà problemi
+    // logger.info('Health check', { ip: req.ip, status: healthData.status });
+    
+    res.json(healthData);
+  } catch (error) {
+    console.error('❌ Health check error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Health check failed',
+      details: error.message 
+    });
+  }
 });
-
-// Serve static files in production
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, 'dist')));
-  
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-  });
-}
 
 // Enhanced error handling middleware
 app.use((error, req, res, next) => {
