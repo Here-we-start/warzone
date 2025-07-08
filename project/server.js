@@ -104,44 +104,22 @@ app.use('/api/auth/', authLimiter);
 // Enhanced Socket.io configuration
 const io = new Server(httpServer, {
   cors: {
-    origin: function(origin, callback) {
-      if (!origin) return callback(null, true);
-      
-      if (process.env.NODE_ENV !== 'production') {
-        return callback(null, true);
-      }
-      
-      const allowedOrigins = [
-        process.env.FRONTEND_URL || 'https://warzone-portal.netlify.app',
-        'https://*.netlify.app',
-        'https://*.bolt.new',
-        'http://localhost:3000',
-        'http://localhost:5173'
-      ];
-      
-      const isAllowed = allowedOrigins.some(allowed => {
-        if (typeof allowed === 'string') {
-          return origin === allowed;
-        }
-        return allowed.test(origin);
-      });
-      
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        logger.warn(`Socket.io CORS blocked origin: ${origin}`);
-        callback(null, true); // Still allow for now
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+    origin: [
+      "https://codesporttournament.netlify.app",
+      "https://*.netlify.app",
+      "https://*.bolt.new",
+      "http://localhost:3000",
+      "http://localhost:5173"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
   },
-  // Production optimizations
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,
-  upgradeTimeout: 10000,
-  maxHttpBufferSize: 1e6, // 1MB
-  allowEIO3: true
+  upgradeTimeout: 30000,
+  maxHttpBufferSize: 1e6
 });
 
 // Express middleware
