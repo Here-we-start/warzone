@@ -1152,6 +1152,27 @@ app.post('/api/auth/login', [
   }
 });
 
+// Homepage di benvenuto
+app.get('/', (req, res) => {
+  res.json({
+    message: '🎮 Warzone Tournament API',
+    status: 'running',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV,
+    endpoints: {
+      health: '/api/health',
+      auditLogs: '/api/audit-logs',
+      login: '/api/login'
+    },
+    documentation: 'API successfully deployed on Render'
+  });
+});
+
+// Health check endpoint with enhanced information
+app.get('/api/health', (req, res) => {
+  // ... il resto del codice health check
+});
+
 // Health check endpoint with enhanced information
 app.get('/api/health', (req, res) => {
   try {
