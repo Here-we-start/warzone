@@ -47,6 +47,60 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showManualSubmission, setShowManualSubmission] = useState(false);
 
   const approveSubmission = (submissionId: string) => {
+  const approveSubmission = (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    const multiplier = multipliers[submission.position] || 1;
+    const score = submission.kills * multiplier;
+
+    const newMatch: Match = {
+      id: `${submission.teamCode}-${Date.now()}`,
+      position: submission.position,
+      kills: submission.kills,
+      score,
+      teamCode: submission.teamCode,
+      photos: submission.photos,
+      status: 'approved',
+      submittedAt: submission.submittedAt,
+      reviewedAt: Date.now(),
+      reviewedBy: 'admin',
+      tournamentId: submission.tournamentId
+    };
+
+    setMatches(prev => [...prev, newMatch]);
+    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_APPROVED',
+      `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId: submission.tournamentId }
+    );
+  };
+
+  const rejectSubmission = (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_REJECTED',
+      `Sottomissione rifiutata per ${submission.teamName}`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId: submission.tournamentId }
+    );
+  };
+
     const submission = pendingSubmissions.find(s => s.id === submissionId);
     if (!submission) return;
 
@@ -507,6 +561,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setCopied(text);
+      setTimeout(() => setCopied(null), 2000);
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
@@ -937,7 +993,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     <div key={code} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                       <span className="text-white font-mono text-lg">{code}</span>
                       <button
-                        onClick={() => copyToClipboard(code)}
+                        onClick={() => copyToClipboard(`admin-${index}`)}
                         className="flex items-center space-x-1 px-3 py-1 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded text-sm font-mono hover:bg-ice-blue/30 transition-colors"
                       >
                         <Copy className="w-3 h-3" />
