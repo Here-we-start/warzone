@@ -4,6 +4,7 @@ import GlassPanel from './GlassPanel';
 import { useRealTimeData } from '../hooks/useRealTimeData';
 import { Tournament, Manager, AuditLog } from '../types';
 import { logAction } from '../utils/auditLogger';
+import ApiService from '../services/api';
 
 interface TournamentCreatorProps {
   isOpen: boolean;
@@ -67,6 +68,19 @@ export default function TournamentCreator({
     };
 
     setTournaments(prev => ({ ...prev, [tournamentId]: newTournament }));
+
+    // Sync with backend
+    try {
+      await ApiService.createTournament(newTournament);
+      console.log('✅ Tournament created successfully:', newTournament.name);
+    } catch (error) {
+      console.error('❌ Failed to create tournament:', error);
+      // Optionally remove from local state if backend fails
+      // setTournaments(prev => {
+      //   const { [tournamentId]: removed, ...rest } = prev;
+      //   return rest;
+      // });
+    }
 
     // Log action
     logAction(
