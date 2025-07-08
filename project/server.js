@@ -228,6 +228,10 @@ app.use((req, res, next) => {
 // Enhanced MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/warzone-tournaments';
 
+console.log('🔌 Connecting to MongoDB...');
+console.log('📊 MONGODB_URI set:', MONGODB_URI ? 'Yes' : 'No');
+console.log('📊 Database type:', MONGODB_URI.includes('mongodb.net') ? 'MongoDB Atlas (Cloud)' : 'Local MongoDB');
+
 logger.info('Connecting to MongoDB...', {
   environment: process.env.NODE_ENV || 'development',
   database: MONGODB_URI.includes('mongodb.net') ? 'MongoDB Atlas (Cloud)' : 'Local MongoDB'
@@ -237,12 +241,14 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   maxPoolSize: 10,
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 30000,  // ← Aumentato da 5000 a 30000
   socketTimeoutMS: 45000,
+  connectTimeoutMS: 30000,          // ← Aggiunto
   bufferMaxEntries: 0,
   bufferCommands: false,
 })
 .then(() => {
+  console.log('✅ MongoDB connected successfully!');
   logger.info('Connected to MongoDB', {
     database: mongoose.connection.db.databaseName,
     host: mongoose.connection.host,
@@ -250,8 +256,10 @@ mongoose.connect(MONGODB_URI, {
   });
 })
 .catch(err => {
+  console.error('❌ MongoDB connection failed:', err.message);
   logger.error('MongoDB connection error', { error: err.message, stack: err.stack });
-  process.exit(1);
+  // NON uscire immediatamente - lascia che il server si avvii
+  // process.exit(1); ← Commenta questa riga temporaneamente
 });
 
 // Enhanced connection monitoring
@@ -1204,20 +1212,31 @@ app.use('/api/*', (req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
+
+console.log('🚀 Starting server...');
+console.log('📊 PORT:', PORT);
+console.log('📊 NODE_ENV:', process.env.NODE_ENV);
+
+// Avvia il server PRIMA della connessione DB per test
 httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log('✅ SERVER STARTED ON PORT', PORT);
+  console.log('🌐 Server accessible on 0.0.0.0:' + PORT);
+  
+  // Log dello stato MongoDB DOPO l'avvio
+  console.log('📊 MongoDB state:', mongoose.connection.readyState);
+  
   logger.info('Server started', {
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
     mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...',
     frontendUrl: process.env.FRONTEND_URL || 'Not set'
   });
-  
-  if (process.env.NODE_ENV === 'production') {
-    logger.info('Production mode: Serving static files from /dist');
-  } else {
-    logger.info('Development mode: API only');
-  }
+}).on('error', (err) => {
+  console.error('❌ SERVER ERROR:', err);
+  process.exit(1);
 });
+
+console.log('📡 Server listen command executed');
 
 // Graceful shutdown
 const gracefulShutdown = (signal) => {
