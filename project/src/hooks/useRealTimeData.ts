@@ -270,6 +270,23 @@ export function useRealTimeData<T>(key: string, initialValue: T) {
     let channel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       channel = new BroadcastChannel('data-sync');
+      
+      // Listen for tournament-specific events
+      const tournamentChannel = new BroadcastChannel('warzone-global-sync');
+      tournamentChannel.onmessage = (event) => {
+        if (event.data.type === 'tournament-created' && key === 'tournaments') {
+          try {
+            setData(prev => ({
+              ...prev as any,
+              [event.data.tournamentId]: event.data.tournament
+            }));
+            console.log(`📡 Nuovo torneo sincronizzato via broadcast:`, event.data.tournament.name);
+          } catch (error) {
+            console.error(`❌ Errore sincronizzazione torneo:`, error);
+          }
+        }
+      };
+      
       channel.onmessage = (event) => {
         if (event.data.type === 'data-update' && event.data.key === key) {
           try {
@@ -295,6 +312,15 @@ export function useRealTimeData<T>(key: string, initialValue: T) {
       window.removeEventListener('storage', handleStorageChange);
       if (channel) {
         channel.close();
+      }
+      // Close tournament channel if it exists
+      if (typeof BroadcastChannel !== 'undefined') {
+        try {
+          const tournamentChannel = new BroadcastChannel('warzone-global-sync');
+          tournamentChannel.close();
+        } catch (error) {
+          // Ignore errors on close
+        }
       }
     };
   }, [key]);

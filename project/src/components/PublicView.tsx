@@ -9,11 +9,29 @@ interface PublicViewProps {
 }
 
 export default function PublicView({ onShowLogin }: PublicViewProps) {
-  const [tournaments, , tournamentsStatus] = useRealTimeData<Record<string, Tournament>>('tournaments', {});
+  const [tournaments, setTournaments, tournamentsStatus] = useRealTimeData<Record<string, Tournament>>('tournaments', {});
   const [teams] = useRealTimeData<Record<string, Team>>('teams', {});
   const [matches] = useRealTimeData<Match[]>('matches', []);
   const [scoreAdjustments] = useRealTimeData<ScoreAdjustment[]>('scoreAdjustments', []);
   const [selectedTournament, setSelectedTournament] = useState<string>('');
+
+  // Set up BroadcastChannel listener for real-time tournament updates
+  useState(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const channel = new BroadcastChannel('warzone-global-sync');
+      channel.onmessage = (event) => {
+        if (event.data.type === 'tournament-created') {
+          console.log('📡 Nuovo torneo ricevuto in PublicView:', event.data.tournament.name);
+          setTournaments(prev => ({
+            ...prev,
+            [event.data.tournamentId]: event.data.tournament
+          }));
+        }
+      };
+      
+      return () => channel.close();
+    }
+  }, []);
 
   const activeTournaments = Object.values(tournaments).filter(t => t.status === 'active');
 

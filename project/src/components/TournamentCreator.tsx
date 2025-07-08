@@ -56,7 +56,7 @@ export default function TournamentCreator({
       id: tournamentId,
       name: tournamentName.trim(),
       type: tournamentType,
-      status: 'active',
+      status: 'active', // Already set to active by default
       startDate: finalStartDate,
       startTime: finalStartTime,
       createdAt: Date.now(),
@@ -72,6 +72,22 @@ export default function TournamentCreator({
 
     // Update tournaments using props instead of local state
     setTournaments(prev => ({ ...prev, [tournamentId]: newTournament }));
+
+    // Emit tournament creation event to ensure real-time visibility
+    if ('BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('warzone-global-sync');
+        channel.postMessage({
+          type: 'tournament-created',
+          tournamentId,
+          tournament: newTournament,
+          timestamp: Date.now()
+        });
+        channel.close();
+      } catch (error) {
+        console.warn('Tournament broadcast failed:', error);
+      }
+    }
 
     // Sync with backend
     try {

@@ -32,11 +32,13 @@ function App() {
     
     // Se ci sono dati salvati, ripristina la sessione
     if (savedUserType && savedUserId) {
+      console.log('🔄 Ripristino sessione da localStorage:', savedUserType);
       setUserType(savedUserType);
       setUserIdentifier(savedUserId);
       if (savedTournamentId) {
         setCurrentTournament(savedTournamentId);
       }
+      setShowLogin(false); // Ensure login screen is not shown when session is restored
     }
     
     const initializeApp = async () => {
