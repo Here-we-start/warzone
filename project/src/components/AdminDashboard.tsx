@@ -84,7 +84,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   };
 
   const rejectSubmission = (submissionId: string) => {
-    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    const submission = pendingSubmissions.find(s => s.id !== submissionId);
     if (!submission) return;
 
     setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
@@ -882,11 +882,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         </div>
       </div>
 
+      {/* IMPORTANT: Pass tournaments and setTournaments props to TournamentCreator */}
       <TournamentCreator
         isOpen={showTournamentCreator}
         onClose={() => setShowTournamentCreator(false)}
         auditLogs={auditLogs}
         setAuditLogs={setAuditLogs}
+        tournaments={tournaments}
+        setTournaments={setTournaments}
       />
 
       <MultiplierSettings 
