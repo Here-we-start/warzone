@@ -279,24 +279,6 @@ const connectToMongoDB = async () => {
 // Connect to MongoDB
 connectToMongoDB();
 
-// Remove the old connection code
-/*
-.then(() => {
-  console.log('✅ MongoDB connected successfully!');
-  logger.info('Connected to MongoDB', {
-    database: mongoose.connection.db.databaseName,
-    host: mongoose.connection.host,
-    port: mongoose.connection.port
-  });
-})
-.catch(err => {
-  console.error('❌ MongoDB connection failed:', err.message);
-  logger.error('MongoDB connection error', { error: err.message, stack: err.stack });
-  // Commenta temporaneamente per permettere l'avvio del server
-  // process.exit(1);
-});
-*/</brokentag>
-
 // Enhanced connection monitoring
 mongoose.connection.on('error', err => {
   logger.error('MongoDB error', { error: err.message });
