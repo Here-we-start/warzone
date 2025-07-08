@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, Key, Bell, AlertTriangle, Menu, X, Archive, UserPlus, Eye, Shield, Plus, Play, Copy, Tv, Upload } from 'lucide-react';
 import GlassPanel from './GlassPanel';
 import TournamentCreator from './TournamentCreator';
@@ -16,6 +16,7 @@ import { useRealTimeData } from '../hooks/useRealTimeData';
 import { Team, Match, TeamStats, PendingSubmission, ScoreAdjustment, Manager, AuditLog, Tournament } from '../types';
 import { generateUniqueTeamCode } from '../utils/teamCodeGenerator';
 import { logAction } from '../utils/auditLogger';
+import ApiService from '../services/api';
 import html2canvas from 'html2canvas';
 
 interface AdminDashboardProps {
@@ -46,6 +47,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Load tournaments from database on component mount
+  useEffect(() => {
+    const loadTournamentsFromDatabase = async () => {
+      try {
+        console.log('📡 Loading tournaments from database...');
+        const tournamentsFromDB = await ApiService.getAllTournaments();
+        
+        if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
+          setTournaments(tournamentsFromDB);
+          localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
+          console.log('✅ Tournaments loaded from database:', Object.keys(tournamentsFromDB).length);
+        } else {
+          console.log('📭 No tournaments found in database');
+        }
+      } catch (error) {
+        console.error('❌ Failed to load tournaments from database:', error);
+        // Fallback to localStorage if database fails
+        try {
+          const localTournaments = localStorage.getItem('tournaments');
+          if (localTournaments) {
+            const parsed = JSON.parse(localTournaments);
+            setTournaments(parsed);
+            console.log('📂 Loaded tournaments from localStorage as fallback');
+          }
+        } catch (localError) {
+          console.error('❌ Failed to load from localStorage too:', localError);
+        }
+      }
+    };
+
+    loadTournamentsFromDatabase();
+  }, []); // Run once on component mount
 
   const approveSubmission = (submissionId: string) => {
     const submission = pendingSubmissions.find(s => s.id === submissionId);
@@ -508,8 +542,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const copyToClipboard = async (text: string, id?: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(id || text);
-      setTimeout(() => setCopied(null), 2000);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
@@ -518,8 +554,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      setCopied(id || text);
-      setTimeout(() => setCopied(null), 2000);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
     }
   };
 
@@ -944,15 +982,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   {['MISOKIETI', 'MISOKIETI8'].map((code, index) => (
                     <div key={code} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                       <span className="text-white font-mono text-lg">{code}</span>
-                      <div>
-                        <button
-                          onClick={() => copyToClipboard(code, `admin-${index}`)}
-                          className="flex items-center space-x-1 px-3 py-1 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded text-sm font-mono hover:bg-ice-blue/30 transition-colors"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>{copied === `admin-${index}` ? 'COPIATO!' : 'COPIA'}</span>
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => copyToClipboard(code, `admin-${index}`)}
+                        className="flex items-center space-x-1 px-3 py-1 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded text-sm font-mono hover:bg-ice-blue/30 transition-colors"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{copied === `admin-${index}` ? 'COPIATO!' : 'COPIA'}</span>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -965,8 +1001,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   {Object.values(managers).filter(m => m.isActive).map((manager) => (
                     <div key={manager.code} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                       <div>
-                        <div className="text-white font-mono text-lg">{manager.code}</div>
-                        <div className="text-purple-400/60 text-sm font-mono mt-1">{manager.name}</div>
+                        <span className="text-white font-mono text-lg">{manager.code}</span>
+                        <div className="text-purple-400/60 text-sm font-mono">{manager.name}</div>
                       </div>
                       <button
                         onClick={() => copyToClipboard(manager.code, `manager-${manager.code}`)}
@@ -992,11 +1028,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   {Object.values(teams).filter(team => {
                     const tournament = tournaments[team.tournamentId];
                     return tournament && tournament.status === 'active';
-                  }).sort((a, b) => a.name.localeCompare(b.name)).map((team) => (
+                  }).map((team) => (
                     <div key={team.code} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                       <div>
-                        <div className="text-white font-mono text-lg">{team.code}</div>
-                        <div className="text-green-400/60 text-sm font-mono mt-1">{team.name}</div>
+                        <span className="text-white font-mono text-lg">{team.code}</span>
+                        <div className="text-green-400/60 text-sm font-mono">{team.name}</div>
                       </div>
                       <button
                         onClick={() => copyToClipboard(team.code, `team-${team.code}`)}
