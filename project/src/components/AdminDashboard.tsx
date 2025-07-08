@@ -46,6 +46,60 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
 
+  const approveSubmission = (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    const multiplier = multipliers[submission.position] || 1;
+    const score = submission.kills * multiplier;
+
+    const newMatch: Match = {
+      id: `${submission.teamCode}-${Date.now()}`,
+      position: submission.position,
+      kills: submission.kills,
+      score,
+      teamCode: submission.teamCode,
+      photos: submission.photos,
+      status: 'approved',
+      submittedAt: submission.submittedAt,
+      reviewedAt: Date.now(),
+      reviewedBy: 'admin',
+      tournamentId: submission.tournamentId
+    };
+
+    setMatches(prev => [...prev, newMatch]);
+    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_APPROVED',
+      `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId: submission.tournamentId }
+    );
+  };
+
+  const rejectSubmission = (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_REJECTED',
+      `Sottomissione rifiutata per ${submission.teamName}`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId: submission.tournamentId }
+    );
+  };
+
   // Raggruppa le submission pendenti per team
   const pendingByTeam = pendingSubmissions.reduce((acc, submission) => {
     if (!acc[submission.teamCode]) {
