@@ -4,6 +4,8 @@
   
 [build.environment]
   NODE_VERSION = "18"
+  VITE_API_URL = "https://warzone-tournament-api-xfut.onrender.com"
+  VITE_SOCKET_URL = "https://warzone-tournament-api-xfut.onrender.com"
   
 # Redirect API calls al tuo backend su Render
 [[redirects]]
