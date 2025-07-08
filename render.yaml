@@ -2,6 +2,7 @@ services:
   - type: web
     name: warzone-tournament-api
     env: node
+    rootDir: project
     buildCommand: npm install
     startCommand: npm start
     envVars:
