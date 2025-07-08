@@ -1070,8 +1070,6 @@ app.get('/api/audit-logs', async (req, res) => {
   } catch (error) {
     logger.error('Get audit logs error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
-    logger.error('Get audit logs error', { error: error.message, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
   }
 });
 
