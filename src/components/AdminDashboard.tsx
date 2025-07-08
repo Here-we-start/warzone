@@ -4,6 +4,8 @@
 
   // Raggruppa le submission pendenti per team
   const pendingByTeam = pendingSubmissions.reduce((acc, submission) => {
+  }
+  )
 @@ .. @@
   const copyToClipboard = async (text: string) => {
     try {
@@ -13,6 +15,8 @@
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
+    }
+  }
 @@ .. @@
                       <div className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
                         <span className="text-white font-mono text-lg">{code}</span>
