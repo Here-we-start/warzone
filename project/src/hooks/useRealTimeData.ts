@@ -242,14 +242,14 @@ export function useRealTimeData<T>(key: string, initialValue: T) {
   // Listener per sincronizzazione cross-device
   useEffect(() => {
     const handleOnline = () => {
+      console.log(`🌐 Online status changed for ${key}: connected`);
       setIsOnline(true);
       setLastError(null);
-      console.log(`🌐 Connessione ripristinata per ${key}`);
     };
     
     const handleOffline = () => {
+      console.log(`🌐 Online status changed for ${key}: disconnected`);
       setIsOnline(false);
-      console.log(`📱 Modalità offline per ${key}`);
     };
     
     const handleStorageChange = (e: StorageEvent) => {
@@ -269,7 +269,7 @@ export function useRealTimeData<T>(key: string, initialValue: T) {
     // Broadcast Channel per sincronizzazione tra tab
     let channel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
-      channel = new BroadcastChannel('data-sync');
+      channel = new BroadcastChannel(`data-sync-${key}`);
       
       // Listen for tournament-specific events
       const tournamentChannel = new BroadcastChannel('warzone-global-sync');
@@ -328,10 +328,25 @@ export function useRealTimeData<T>(key: string, initialValue: T) {
   // Ricarica dati quando la connessione viene ristabilita
   useEffect(() => {
     if (isConnected && error) {
-      console.log(`🔄 Riconnesso, ricarico ${key}...`);
+      console.log(`🔄 Reconnected, reloading ${key}...`);
       fetchData();
     }
-  }, [isConnected]);
+  }, [isConnected, error]);
+  
+  // Listen for specific events related to this data type
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const specificChannel = new BroadcastChannel(`${key}-updates`);
+      specificChannel.onmessage = (event) => {
+        if (event.data.type === `${key}-update`) {
+          console.log(`📡 Received specific update for ${key}:`, event.data.action);
+          fetchData();
+        }
+      };
+      
+      return () => specificChannel.close();
+    }
+  }, [key]);
 
   return [data, updateData, { isLoading, error, refetch: fetchData, isOnline, lastError }] as const;
 }
