@@ -63,10 +63,12 @@ class ApiService {
   }
 
   static async getTournament(id: string) {
+    console.log(`🔍 [API] Getting tournament: ${id}`);
     return this.request(`/api/tournaments/${id}`);
   }
 
   static async createTournament(tournament: any) {
+    console.log(`🔍 [API] Creating tournament:`, tournament);
     return this.request('/api/tournaments', {
       method: 'POST',
       body: JSON.stringify(tournament)
@@ -86,9 +88,17 @@ class ApiService {
   }
 
   static async createTeam(team: any) {
+    console.log(`🔍 [API] Creating team:`, team);
     return this.request('/api/teams', {
       method: 'POST',
       body: JSON.stringify(team)
+    });
+  }
+
+  static async deleteTeam(id: string) {
+    console.log(`🔍 [API] Deleting team: ${id}`);
+    return this.request(`/api/teams/${id}`, {
+      method: 'DELETE'
     });
   }
 
@@ -98,6 +108,7 @@ class ApiService {
   }
 
   static async createMatch(match: any) {
+    console.log(`🔍 [API] Creating match:`, match);
     return this.request('/api/matches', {
       method: 'POST',
       body: JSON.stringify(match)
@@ -117,6 +128,7 @@ class ApiService {
   }
 
   static async deletePendingSubmission(id: string) {
+    console.log(`🔍 [API] Deleting pending submission: ${id}`);
     return this.request(`/api/pending-submissions/${id}`, {
       method: 'DELETE'
     });
@@ -128,6 +140,7 @@ class ApiService {
   }
 
   static async createScoreAdjustment(adjustment: any) {
+    console.log(`🔍 [API] Creating score adjustment:`, adjustment);
     return this.request('/api/score-adjustments', {
       method: 'POST',
       body: JSON.stringify(adjustment)
@@ -261,14 +274,31 @@ class ApiService {
   // Health check with enhanced error handling
   static async healthCheck() {
     try {
-      return await this.request('/api/health');
+      console.log('🔍 [API] Checking database health...');
+      const result = await this.request('/api/health');
+      console.log('✅ [API] Database is healthy:', result);
+      return result;
     } catch (error) {
+      console.warn('⚠️ [API] Database health check failed:', error);
       logger.warn('Health check failed', { error: error instanceof Error ? error.message : 'Unknown error' });
       return { 
         success: false, 
         status: 'unhealthy', 
         error: error instanceof Error ? error.message : 'Unknown error' 
       };
+    }
+  }
+
+  // Check if backend is reachable
+  static async checkBackendStatus() {
+    try {
+      console.log('🔍 [API] Checking backend status...');
+      const result = await this.healthCheck();
+      console.log('✅ [API] Backend is reachable:', result);
+      return true;
+    } catch (error) {
+      console.warn('⚠️ [API] Backend unreachable:', error);
+      return false;
     }
   }
 
@@ -335,7 +365,7 @@ class ApiService {
     this.pollingIntervals.clear();
   }
 
-  // Synchronization wrapper for dual local + database storage
+  // NUOVO: Synchronization wrapper for dual local + database storage con DEBUG
   static async syncOperation<T>(
     operation: {
       localUpdate: () => void;
@@ -344,28 +374,66 @@ class ApiService {
       storageData?: any;
       operationName: string;
     }
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; details?: any }> {
     try {
+      console.log(`🔍 [DEBUG] Starting sync operation: ${operation.operationName}`);
+      
       // 1. Update local state immediately (for responsive UI)
       operation.localUpdate();
+      console.log(`✅ [DEBUG] Local update completed for: ${operation.operationName}`);
       
       // 2. Update localStorage if needed
       if (operation.storageKey && operation.storageData) {
         localStorage.setItem(operation.storageKey, JSON.stringify(operation.storageData));
+        console.log(`💾 [DEBUG] localStorage backup saved for: ${operation.storageKey}`);
       }
       
-      // 3. Sync with database
-      await operation.apiCall();
+      // 3. Sync with database with detailed debug
+      try {
+        console.log(`🌐 [DEBUG] Attempting database sync for: ${operation.operationName}`);
+        console.log(`📡 [DEBUG] Data being sent:`, operation.storageData);
+        
+        const result = await operation.apiCall();
+        console.log(`✅ [DEBUG] Database sync successful:`, result);
+        
+        console.log(`✅ ${operation.operationName} synced successfully`);
+        return { success: true };
+        
+      } catch (dbError: any) {
+        console.error(`❌ [DEBUG] Database sync failed for ${operation.operationName}:`, {
+          error: dbError.message,
+          status: dbError.status,
+          stack: dbError.stack
+        });
+
+        // Log dettagliato dell'errore per debug
+        if (dbError.response) {
+          try {
+            const errorText = await dbError.response.text();
+            console.error(`📄 [DEBUG] Backend error response:`, errorText);
+          } catch (e) {
+            console.error(`📄 [DEBUG] Could not read error response`);
+          }
+        }
+
+        console.warn(`⚠️ ${operation.operationName} database sync failed:`, dbError);
+        
+        return { 
+          success: false, 
+          error: dbError.message || 'Database sync failed',
+          details: {
+            status: dbError.status,
+            operation: operation.operationName,
+            timestamp: new Date().toISOString()
+          }
+        };
+      }
       
-      console.log(`✅ ${operation.operationName} synced successfully`);
-      return { success: true };
-      
-    } catch (error) {
-      console.warn(`⚠️ ${operation.operationName} database sync failed:`, error);
-      // Local data is already saved, so operation continues
+    } catch (error: any) {
+      console.error(`💥 [DEBUG] Critical error in sync operation ${operation.operationName}:`, error);
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: error.message || 'Critical sync operation failed' 
       };
     }
   }
