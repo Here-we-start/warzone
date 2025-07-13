@@ -469,6 +469,69 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     loadAllDataWithMultiDeviceSync();
   }, []); // Run once on component mount
 
+  // ✅ HOOK DEDICATO PER SINCRONIZZAZIONE TEAMS TRA DISPOSITIVI
+useEffect(() => {
+  const syncTeamsAcrossDevices = async () => {
+    if (typeof ApiService?.getAllTeams === 'function') {
+      try {
+        console.log('🔄 [DEVICE-SYNC] Syncing teams across devices...');
+        const serverTeams = await ApiService.getAllTeams();
+        
+        if (serverTeams) {
+          // Gestisce diversi formati di risposta
+          let teamsData = serverTeams;
+          if (serverTeams.teams) teamsData = serverTeams.teams;
+          if (serverTeams.data) teamsData = serverTeams.data;
+          
+          // Converte array in oggetto se necessario
+          if (Array.isArray(teamsData)) {
+            const teamsObject = teamsData.reduce((acc, team) => {
+              const key = team.slotId || team._id?.toString() || `team-${team.code}`;
+              if (key && team.code) {
+                acc[key] = { 
+                  ...team, 
+                  id: team._id?.toString() || key,
+                  slotId: team.slotId || key 
+                };
+              }
+              return acc;
+            }, {});
+            
+            // Aggiorna solo se ci sono cambiamenti
+            const currentTeamsStr = JSON.stringify(teams);
+            const newTeamsStr = JSON.stringify(teamsObject);
+            
+            if (currentTeamsStr !== newTeamsStr) {
+              console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsObject).length);
+              setTeams(teamsObject);
+              localStorage.setItem('teams', JSON.stringify(teamsObject));
+            }
+          } else if (typeof teamsData === 'object') {
+            const currentTeamsStr = JSON.stringify(teams);
+            const newTeamsStr = JSON.stringify(teamsData);
+            
+            if (currentTeamsStr !== newTeamsStr) {
+              console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsData).length);
+              setTeams(teamsData);
+              localStorage.setItem('teams', JSON.stringify(teamsData));
+            }
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ [DEVICE-SYNC] Sync failed (offline?):', error.message);
+      }
+    }
+  };
+  
+  // Sincronizza all'avvio immediatamente
+  syncTeamsAcrossDevices();
+  
+  // E poi ogni 10 secondi per aggiornamenti in tempo reale
+  const interval = setInterval(syncTeamsAcrossDevices, 10000);
+  
+  return () => clearInterval(interval);
+}, []); // Esegui solo una volta all'avvio
+
   // ✅ SINCRONIZZAZIONE PERIODICA MIGLIORATA CON TEAMS FIX
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
