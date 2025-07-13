@@ -147,8 +147,6 @@ export default function TournamentManagement({
     return sorted;
   };
 
-// SOSTITUISCI COMPLETAMENTE la funzione registerTeam con questa versione FORZATA:
-
 const registerTeam = async () => {
   console.log('🔥 [FORCE DEBUG] STARTING TEAM REGISTRATION - NEW VERSION');
   
