@@ -37,134 +37,92 @@ export default function TournamentCreator({
 
   const activeManagers = Object.values(managers).filter(m => m.isActive);
 
-  const createTournament = async () => {
-    if (!tournamentName.trim()) return;
+ const createTournament = async () => {
+  if (!tournamentName.trim()) return;
 
-    setIsCreating(true);
-    
-    // Cinematic delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  setIsCreating(true);
+  
+  // Cinematic delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const tournamentId = `tournament-${Date.now()}`;
-    const slotsPerLobby = tournamentType === 'Ritorno' ? 15 : 50;
+  const tournamentId = `tournament-${Date.now()}`;
+  const slotsPerLobby = tournamentType === 'Ritorno' ? 15 : 50;
 
-    // Use current date if no date is provided
-    const finalStartDate = startDate || new Date().toISOString().split('T')[0];
-    const finalStartTime = startTime || '20:00';
+  // Use current date if no date is provided
+  const finalStartDate = startDate || new Date().toISOString().split('T')[0];
+  const finalStartTime = startTime || '20:00';
 
-    const newTournament: Tournament = {
-      id: tournamentId,
-      name: tournamentName.trim(),
+  const newTournament: Tournament = {
+    id: tournamentId,
+    name: tournamentName.trim(),
+    type: tournamentType,
+    status: 'active',
+    startDate: finalStartDate,
+    startTime: finalStartTime,
+    createdAt: Date.now(),
+    createdBy: 'admin',
+    assignedManagers: selectedManagers,
+    settings: { 
+      lobbies, 
+      slotsPerLobby, 
+      totalMatches, 
+      countedMatches 
+    }
+  };
+
+  // Use our new sync wrapper for robust database + localStorage sync
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately for responsive UI
+      setTournaments(prev => ({ ...prev, [tournamentId]: newTournament }));
+    },
+    apiCall: () => ApiService.createTournament(newTournament),
+    storageKey: 'tournaments',
+    storageData: { ...tournaments, [tournamentId]: newTournament },
+    operationName: `Tournament Creation: ${tournamentName.trim()}`
+  });
+
+  // Show appropriate feedback based on sync result
+  if (syncResult.success) {
+    console.log('✅ Tournament created and synced to database successfully');
+    // No alert needed - success is silent for good UX
+  } else {
+    console.warn('⚠️ Tournament created locally, database sync failed:', syncResult.error);
+    alert('⚠️ Torneo creato localmente. La sincronizzazione con il database fallita, ma il torneo funzionerà ugualmente.');
+  }
+
+  // Log action (this should also be synced but it's less critical)
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'TOURNAMENT_CREATED',
+    `Nuovo torneo creato: ${tournamentName.trim()} (${tournamentType}) - ${totalMatches} partite totali, ${countedMatches} contate - Data: ${finalStartDate} ${finalStartTime}`,
+    'admin',
+    'admin',
+    { 
+      tournamentId, 
+      tournamentName: tournamentName.trim(), 
       type: tournamentType,
-      status: 'active',
       startDate: finalStartDate,
       startTime: finalStartTime,
-      createdAt: Date.now(),
-      createdBy: 'admin',
-      assignedManagers: selectedManagers,
-      settings: { 
-        lobbies, 
-        slotsPerLobby, 
-        totalMatches, 
-        countedMatches 
-      }
-    };
-
-    // PRIORITY: Try to save to database first for multi-device sync
-    if (typeof ApiService?.createTournament === 'function') {
-      try {
-        console.log('💾 Saving tournament to database for multi-device sync...');
-        await ApiService.createTournament(newTournament);
-        console.log('✅ Tournament synced to database successfully:', newTournament.name);
-        
-        // Update local state AFTER successful database save
-        setTournaments(prev => {
-          const updatedTournaments = { ...prev, [tournamentId]: newTournament };
-          
-          // Also save to localStorage as cache
-          try {
-            localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
-            console.log('✅ Tournament cached in localStorage');
-          } catch (localError) {
-            console.error('❌ Failed to cache tournament in localStorage:', localError);
-          }
-          
-          return updatedTournaments;
-        });
-        
-      } catch (error) {
-        console.error('❌ Failed to save tournament to database:', error);
-        
-        // FALLBACK: Save locally only if database fails
-        console.log('📱 Saving tournament locally as fallback...');
-        setTournaments(prev => {
-          const updatedTournaments = { ...prev, [tournamentId]: newTournament };
-          
-          try {
-            localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
-            console.log('✅ Tournament saved locally (FALLBACK)');
-          } catch (localError) {
-            console.error('❌ Failed to save tournament locally:', localError);
-          }
-          
-          return updatedTournaments;
-        });
-        
-        // Show warning to user that it's only saved locally
-        alert('⚠️ Torneo creato solo localmente. Altri dispositivi non lo vedranno fino alla riconnessione al server.');
-      }
-    } else {
-      console.log('⚠️ ApiService not available, saving locally only');
-      
-      // Save locally when ApiService is not available
-      setTournaments(prev => {
-        const updatedTournaments = { ...prev, [tournamentId]: newTournament };
-        
-        try {
-          localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
-          console.log('✅ Tournament saved locally (ApiService unavailable)');
-        } catch (localError) {
-          console.error('❌ Failed to save tournament locally:', localError);
-        }
-        
-        return updatedTournaments;
-      });
-      
-      alert('⚠️ Torneo creato solo localmente. Configurare il database per la sincronizzazione multi-dispositivo.');
+      totalMatches,
+      countedMatches,
+      lobbies,
+      assignedManagers: selectedManagers 
     }
+  );
 
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'TOURNAMENT_CREATED',
-      `Nuovo torneo creato: ${tournamentName.trim()} (${tournamentType}) - ${totalMatches} partite totali, ${countedMatches} contate - Data: ${finalStartDate} ${finalStartTime}`,
-      'admin',
-      'admin',
-      { 
-        tournamentId, 
-        tournamentName: tournamentName.trim(), 
-        type: tournamentType,
-        startDate: finalStartDate,
-        startTime: finalStartTime,
-        totalMatches,
-        countedMatches,
-        lobbies,
-        assignedManagers: selectedManagers 
-      }
-    );
-
-    // Reset form
-    setTournamentName('');
-    setStartDate('');
-    setStartTime('');
-    setTotalMatches(5);
-    setCountedMatches(4);
-    setLobbies(2);
-    setSelectedManagers([]);
-    setIsCreating(false);
-    onClose();
-  };
+  // Reset form
+  setTournamentName('');
+  setStartDate('');
+  setStartTime('');
+  setTotalMatches(5);
+  setCountedMatches(4);
+  setLobbies(2);
+  setSelectedManagers([]);
+  setIsCreating(false);
+  onClose();
+};
 
   const toggleManager = (managerCode: string) => {
     setSelectedManagers(prev => 
