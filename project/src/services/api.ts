@@ -334,6 +334,41 @@ class ApiService {
     });
     this.pollingIntervals.clear();
   }
+
+  // Synchronization wrapper for dual local + database storage
+  static async syncOperation<T>(
+    operation: {
+      localUpdate: () => void;
+      apiCall: () => Promise<any>;
+      storageKey?: string;
+      storageData?: any;
+      operationName: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // 1. Update local state immediately (for responsive UI)
+      operation.localUpdate();
+      
+      // 2. Update localStorage if needed
+      if (operation.storageKey && operation.storageData) {
+        localStorage.setItem(operation.storageKey, JSON.stringify(operation.storageData));
+      }
+      
+      // 3. Sync with database
+      await operation.apiCall();
+      
+      console.log(`✅ ${operation.operationName} synced successfully`);
+      return { success: true };
+      
+    } catch (error) {
+      console.warn(`⚠️ ${operation.operationName} database sync failed:`, error);
+      // Local data is already saved, so operation continues
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
+    }
+  }
 }
 
 export default ApiService;
