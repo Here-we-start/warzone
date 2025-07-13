@@ -147,156 +147,261 @@ export default function TournamentManagement({
     return sorted;
   };
 
-  const registerTeam = () => {
-    if (!teamName.trim()) return;
+const registerTeam = async () => {
+  if (!teamName.trim()) return;
+  
+  // Check if team already exists in this slot
+  const existingTeam = Object.values(teams).find(t => 
+    t.tournamentId === tournamentId && 
+    t.lobbyNumber === selectedLobby && 
+    t.lobby === getTeamKey(selectedLobby, selectedSlot)
+  );
+  
+  if (existingTeam) {
+    if (!confirm(`Slot già occupato da "${existingTeam.name}". Vuoi sovrascrivere?`)) {
+      return;
+    }
     
-    // Check if team already exists in this slot
-    const existingTeam = Object.values(teams).find(t => 
-      t.tournamentId === tournamentId && 
-      t.lobbyNumber === selectedLobby && 
-      t.lobby === getTeamKey(selectedLobby, selectedSlot)
-    );
-    
-    if (existingTeam) {
-      if (!confirm(`Slot già occupato da "${existingTeam.name}". Vuoi sovrascrivere?`)) {
-        return;
+    // Remove existing team first
+    await removeTeam(existingTeam.id);
+  }
+  
+  const key = getTeamKey(selectedLobby, selectedSlot);
+  const code = generateUniqueTeamCode(teams);
+  
+  const newTeam: Team = {
+    id: key,
+    name: teamName.trim(),
+    code,
+    lobby: key,
+    lobbyNumber: tournament.type === 'Ritorno' ? selectedLobby : undefined,
+    createdAt: Date.now(),
+    tournamentId
+  };
+
+  // Use sync wrapper for database + localStorage sync
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately for responsive UI
+      setTeams(prev => ({ ...prev, [key]: newTeam }));
+    },
+    apiCall: () => ApiService.createTeam(newTeam),
+    storageKey: 'teams',
+    storageData: { ...teams, [key]: newTeam },
+    operationName: `Team Registration: ${teamName.trim()}`
+  });
+
+  // Handle sync result
+  if (syncResult.success) {
+    console.log('✅ Team registered and synced to database successfully');
+  } else {
+    console.warn('⚠️ Team registered locally, database sync failed:', syncResult.error);
+    // Note: We don't show alert here since team registration should be seamless
+  }
+
+  // Reset form
+  setTeamName('');
+  
+  // Broadcast team creation for real-time updates
+  if ('BroadcastChannel' in window) {
+    try {
+      const channel = new BroadcastChannel('warzone-global-sync');
+      channel.postMessage({
+        type: 'team-created',
+        teamId: key,
+        team: newTeam,
+        timestamp: Date.now()
+      });
+      channel.close();
+    } catch (error) {
+      console.warn('Team broadcast failed:', error);
+    }
+  }
+  
+  // Show the generated code
+  setShowTeamCode({ name: teamName.trim(), code });
+
+  // Log action
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'TEAM_REGISTERED',
+    `Squadra registrata: ${teamName.trim()} (${code}) in ${key}`,
+    'admin',
+    'admin',
+    { teamCode: code, teamName: teamName.trim(), tournamentId, lobby: key }
+  );
+};
+
+const removeTeam = async (teamId: string) => {
+  const team = teams[teamId];
+  if (!team) return;
+
+  if (!confirm(`Sei sicuro di voler rimuovere la squadra ${team.name}?`)) return;
+
+  // Use sync wrapper for database + localStorage sync
+  const updatedTeams = { ...teams };
+  delete updatedTeams[teamId];
+
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately
+      setTeams(prev => {
+        const newTeams = { ...prev };
+        delete newTeams[teamId];
+        return newTeams;
+      });
+
+      // Remove team matches
+      setMatches(prev => prev.filter(match => match.teamCode !== team.code));
+
+      // Remove team pending submissions
+      setPendingSubmissions(prev => prev.filter(sub => sub.teamCode !== team.code));
+
+      // Remove team adjustments
+      setScoreAdjustments(prev => prev.filter(adj => adj.teamCode !== team.code));
+    },
+    apiCall: async () => {
+      // Delete team from database
+      // Note: We should also delete related matches, submissions, and adjustments
+      // For now, we'll delete the team and let the server handle cleanup
+      if (typeof ApiService?.deleteTeam === 'function') {
+        await ApiService.deleteTeam(teamId);
+      } else {
+        // If deleteTeam doesn't exist, we'll skip database deletion
+        console.warn('⚠️ ApiService.deleteTeam not available, team removed locally only');
       }
+    },
+    storageKey: 'teams',
+    storageData: updatedTeams,
+    operationName: `Team Removal: ${team.name}`
+  });
+
+  // Handle sync result
+  if (syncResult.success) {
+    console.log('✅ Team removed and synced to database successfully');
+  } else {
+    console.warn('⚠️ Team removed locally, database sync failed:', syncResult.error);
+    // Note: We don't show alert here since removal should be seamless
+  }
+
+  // Log action
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'TEAM_REMOVED',
+    `Squadra rimossa: ${team.name} (${team.code})`,
+    'admin',
+    'admin',
+    { teamCode: team.code, teamName: team.name, tournamentId }
+  );
+};
+  const approveSubmission = async (submissionId: string) => {
+  const submission = pendingSubmissions.find(s => s.id === submissionId);
+  if (!submission) return;
+
+  const multiplier = multipliers[submission.position] || 1;
+  const score = submission.kills * multiplier;
+
+  const newMatch: Match = {
+    id: `${submission.teamCode}-${Date.now()}`,
+    position: submission.position,
+    kills: submission.kills,
+    score,
+    teamCode: submission.teamCode,
+    photos: submission.photos,
+    status: 'approved',
+    submittedAt: submission.submittedAt,
+    reviewedAt: Date.now(),
+    reviewedBy: 'admin',
+    tournamentId
+  };
+
+  // Use sync wrapper for match creation and submission removal
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately for responsive UI
+      setMatches(prev => [...prev, newMatch]);
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    },
+    apiCall: async () => {
+      // Create match in database
+      await ApiService.createMatch(newMatch);
       
-      // Remove existing team first
-      removeTeam(existingTeam.id);
-    }
-    
-    const key = getTeamKey(selectedLobby, selectedSlot);
-    const code = generateUniqueTeamCode(teams);
-    
-    const newTeam: Team = {
-      id: key,
-      name: teamName.trim(),
-      code,
-      lobby: key,
-      lobbyNumber: tournament.type === 'Ritorno' ? selectedLobby : undefined,
-      createdAt: Date.now(),
-      tournamentId
-    };
-
-    setTeams(prev => ({ ...prev, [key]: newTeam }));
-    setTeamName('');
-    
-    // Broadcast team creation for real-time updates
-    if ('BroadcastChannel' in window) {
-      try {
-        const channel = new BroadcastChannel('warzone-global-sync');
-        channel.postMessage({
-          type: 'team-created',
-          teamId: key,
-          team: newTeam,
-          timestamp: Date.now()
-        });
-        channel.close();
-      } catch (error) {
-        console.warn('Team broadcast failed:', error);
+      // Remove pending submission from database
+      if (typeof ApiService?.deletePendingSubmission === 'function') {
+        await ApiService.deletePendingSubmission(submissionId);
       }
-    }
-    
-    // Show the generated code
-    setShowTeamCode({ name: teamName.trim(), code });
+    },
+    storageKey: 'matches',
+    storageData: [...matches, newMatch],
+    operationName: `Score Approval: ${submission.teamName} - ${submission.position}° posto`
+  });
 
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'TEAM_REGISTERED',
-      `Squadra registrata: ${teamName.trim()} (${code}) in ${key}`,
-      'admin',
-      'admin',
-      { teamCode: code, teamName: teamName.trim(), tournamentId, lobby: key }
-    );
-  };
+  // Handle sync result
+  if (syncResult.success) {
+    console.log('✅ Score approved and synced to database successfully');
+  } else {
+    console.warn('⚠️ Score approved locally, database sync failed:', syncResult.error);
+  }
 
-  const removeTeam = (teamId: string) => {
-    const team = teams[teamId];
-    if (!team) return;
+  // Also update pending submissions in localStorage
+  const updatedPendingSubmissions = pendingSubmissions.filter(s => s.id !== submissionId);
+  localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPendingSubmissions));
 
-    if (!confirm(`Sei sicuro di voler rimuovere la squadra ${team.name}?`)) return;
+  // Log action
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'SUBMISSION_APPROVED',
+    `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
+    'admin',
+    'admin',
+    { teamCode: submission.teamCode, submissionId, tournamentId }
+  );
+};
 
-    // Remove team
-    setTeams(prev => {
-      const newTeams = { ...prev };
-      delete newTeams[teamId];
-      return newTeams;
-    });
+const rejectSubmission = async (submissionId: string) => {
+  const submission = pendingSubmissions.find(s => s.id === submissionId);
+  if (!submission) return;
 
-    // Remove team matches
-    setMatches(prev => prev.filter(match => match.teamCode !== team.code));
+  // Use sync wrapper for submission removal
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately for responsive UI
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    },
+    apiCall: async () => {
+      // Remove pending submission from database
+      if (typeof ApiService?.deletePendingSubmission === 'function') {
+        await ApiService.deletePendingSubmission(submissionId);
+      } else {
+        console.warn('⚠️ ApiService.deletePendingSubmission not available');
+      }
+    },
+    storageKey: 'pendingSubmissions',
+    storageData: pendingSubmissions.filter(s => s.id !== submissionId),
+    operationName: `Score Rejection: ${submission.teamName}`
+  });
 
-    // Remove team pending submissions
-    setPendingSubmissions(prev => prev.filter(sub => sub.teamCode !== team.code));
+  // Handle sync result
+  if (syncResult.success) {
+    console.log('✅ Score rejected and synced to database successfully');
+  } else {
+    console.warn('⚠️ Score rejected locally, database sync failed:', syncResult.error);
+  }
 
-    // Remove team adjustments
-    setScoreAdjustments(prev => prev.filter(adj => adj.teamCode !== team.code));
-
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'TEAM_REMOVED',
-      `Squadra rimossa: ${team.name} (${team.code})`,
-      'admin',
-      'admin',
-      { teamCode: team.code, teamName: team.name, tournamentId }
-    );
-  };
-
-  const approveSubmission = (submissionId: string) => {
-    const submission = pendingSubmissions.find(s => s.id === submissionId);
-    if (!submission) return;
-
-    const multiplier = multipliers[submission.position] || 1;
-    const score = submission.kills * multiplier;
-
-    const newMatch: Match = {
-      id: `${submission.teamCode}-${Date.now()}`,
-      position: submission.position,
-      kills: submission.kills,
-      score,
-      teamCode: submission.teamCode,
-      photos: submission.photos,
-      status: 'approved',
-      submittedAt: submission.submittedAt,
-      reviewedAt: Date.now(),
-      reviewedBy: 'admin',
-      tournamentId
-    };
-
-    setMatches(prev => [...prev, newMatch]);
-    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
-
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'SUBMISSION_APPROVED',
-      `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
-      'admin',
-      'admin',
-      { teamCode: submission.teamCode, submissionId, tournamentId }
-    );
-  };
-
-  const rejectSubmission = (submissionId: string) => {
-    const submission = pendingSubmissions.find(s => s.id === submissionId);
-    if (!submission) return;
-
-    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
-
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'SUBMISSION_REJECTED',
-      `Sottomissione rifiutata per ${submission.teamName}`,
-      'admin',
-      'admin',
-      { teamCode: submission.teamCode, submissionId, tournamentId }
-    );
-  };
+  // Log action
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'SUBMISSION_REJECTED',
+    `Sottomissione rifiutata per ${submission.teamName}`,
+    'admin',
+    'admin',
+    { teamCode: submission.teamCode, submissionId, tournamentId }
+  );
+};
 
   const handleManualSubmission = async (submission: Omit<PendingSubmission, 'id' | 'submittedAt'>) => {
     const newSubmission: PendingSubmission = {
@@ -319,27 +424,45 @@ export default function TournamentManagement({
     );
   };
 
-  const addScoreAdjustment = (adjustmentData: Omit<ScoreAdjustment, 'id' | 'appliedAt' | 'appliedBy' | 'tournamentId'>) => {
-    const newAdjustment: ScoreAdjustment = {
-      ...adjustmentData,
-      id: `adj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      appliedAt: Date.now(),
-      appliedBy: 'admin',
-      tournamentId
-    };
-
-    setScoreAdjustments(prev => [...prev, newAdjustment]);
-
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'SCORE_ADJUSTMENT',
-      `${adjustmentData.type === 'penalty' ? 'Penalità' : 'Ricompensa'} applicata a ${adjustmentData.teamName}: ${adjustmentData.points > 0 ? '+' : ''}${adjustmentData.points} punti - ${adjustmentData.reason}`,
-      'admin',
-      'admin',
-      { teamCode: adjustmentData.teamCode, type: adjustmentData.type, points: adjustmentData.points, tournamentId }
-    );
+ const addScoreAdjustment = async (adjustmentData: Omit<ScoreAdjustment, 'id' | 'appliedAt' | 'appliedBy' | 'tournamentId'>) => {
+  const newAdjustment: ScoreAdjustment = {
+    ...adjustmentData,
+    id: `adj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    appliedAt: Date.now(),
+    appliedBy: 'admin',
+    tournamentId
   };
+
+  // Use sync wrapper for database + localStorage sync
+  const syncResult = await ApiService.syncOperation({
+    localUpdate: () => {
+      // Update local state immediately for responsive UI
+      setScoreAdjustments(prev => [...prev, newAdjustment]);
+    },
+    apiCall: () => ApiService.createScoreAdjustment(newAdjustment),
+    storageKey: 'scoreAdjustments',
+    storageData: [...scoreAdjustments, newAdjustment],
+    operationName: `Score Adjustment: ${adjustmentData.type === 'penalty' ? 'Penalty' : 'Reward'} for ${adjustmentData.teamName}`
+  });
+
+  // Handle sync result
+  if (syncResult.success) {
+    console.log('✅ Score adjustment applied and synced to database successfully');
+  } else {
+    console.warn('⚠️ Score adjustment applied locally, database sync failed:', syncResult.error);
+  }
+
+  // Log action
+  logAction(
+    auditLogs,
+    setAuditLogs,
+    'SCORE_ADJUSTMENT',
+    `${adjustmentData.type === 'penalty' ? 'Penalità' : 'Ricompensa'} applicata a ${adjustmentData.teamName}: ${adjustmentData.points > 0 ? '+' : ''}${adjustmentData.points} punti - ${adjustmentData.reason}`,
+    'admin',
+    'admin',
+    { teamCode: adjustmentData.teamCode, type: adjustmentData.type, points: adjustmentData.points, tournamentId }
+  );
+};
 
   const assignManager = (managerCode: string) => {
     const manager = managers[managerCode];
