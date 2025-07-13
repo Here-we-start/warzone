@@ -388,189 +388,161 @@ export default function TournamentManagement({
   };
 
   const completeTournament = async () => {
-    if (!confirm(`⚠️ ATTENZIONE! Sei sicuro di voler TERMINARE DEFINITIVAMENTE il torneo "${tournament.name}"?\n\nQuesta azione:\n- Terminerà il torneo e lo rimuoverà dai tornei attivi\n- Eliminerà tutte le squadre e le loro sessioni di login\n- Salverà una copia nell'archivio solo per consultazione\n- I team non potranno più accedere o inviare punteggi\n\nQuesta azione NON PUÒ essere annullata!`)) return;
+  if (!confirm(`⚠️ ATTENZIONE! Sei sicuro di voler TERMINARE DEFINITIVAMENTE il torneo "${tournament.name}"?\n\nQuesta azione:\n- Terminerà il torneo e lo rimuoverà dai tornei attivi\n- Eliminerà tutte le squadre e le loro sessioni di login\n- Salverà una copia nell'archivio solo per consultazione\n- I team non potranno più accedere o inviare punteggi\n\nQuesta azione NON PUÒ essere annullata!`)) return;
 
-    try {
-      console.log('🏁 Terminando torneo completamente:', tournamentId);
+  try {
+    console.log('🏁 Terminando torneo completamente:', tournamentId);
 
-      // 1. Calcola la classifica finale prima di terminare
-      const finalLeaderboard = getLeaderboard();
+    // 1. Calcola la classifica finale prima di terminare
+    const finalLeaderboard = getLeaderboard();
 
-      // 2. Crea una copia archiviata del torneo con tutti i dati per consultazione
-      const archivedTournament = {
-        ...tournament,
-        status: 'archived',
-        endedAt: Date.now(),
-        completedAt: Date.now(),
-        finalLeaderboard,
-        // Salva snapshot dei dati al momento della terminazione
-        archivedData: {
-          teams: Object.values(teams).filter(team => team.tournamentId === tournamentId),
-          matches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved'),
-          adjustments: scoreAdjustments.filter(adj => adj.tournamentId === tournamentId),
-          totalTeams: Object.values(teams).filter(team => team.tournamentId === tournamentId).length,
-          totalMatches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved').length
-        }
-      };
-
-      // 3. Salva nell'archivio
-      setTournaments(prev => ({
-        ...prev,
-        [tournamentId]: archivedTournament
-      }));
-
-      // 4. ELIMINA COMPLETAMENTE tutti i dati operativi del torneo
-
-      // Elimina tutte le squadre del torneo (questo termina le loro sessioni)
-      const tournamentTeamIds = Object.values(teams)
-        .filter(team => team.tournamentId === tournamentId)
-        .map(team => team.id);
-
-      setTeams(prev => {
-        const newTeams = { ...prev };
-        tournamentTeamIds.forEach(teamId => {
-          delete newTeams[teamId];
-        });
-        return newTeams;
-      });
-
-      // Elimina tutte le partite operative
-      setMatches(prev => prev.filter(match => match.tournamentId !== tournamentId));
-
-      // Elimina tutte le submission pendenti
-      setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== tournamentId));
-
-      // Elimina tutti gli aggiustamenti operativi
-      setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== tournamentId));
-
-      // 5. Log dell'eliminazione completa
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'TOURNAMENT_TERMINATED',
-        `Torneo terminato definitivamente: ${tournament.name} - ${finalLeaderboard.length} squadre, ${matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length} partite. Salvato in archivio per consultazione.`,
-        'admin',
-        'admin',
-        { 
-          tournamentId, 
-          tournamentName: tournament.name,
-          finalTeams: finalLeaderboard.length,
-          finalMatches: matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length
-        }
-      );
-
-      // 6. Broadcast per terminare tutte le sessioni attive
-      if ('BroadcastChannel' in window) {
-        try {
-          const channel = new BroadcastChannel('warzone-global-sync');
-          channel.postMessage({
-            type: 'tournament-terminated',
-            tournamentId: tournamentId,
-            message: `Il torneo "${tournament.name}" è stato terminato. Tutte le sessioni sono state chiuse.`,
-            timestamp: Date.now()
-          });
-          channel.close();
-        } catch (error) {
-          console.warn('Tournament termination broadcast failed:', error);
-        }
+    // 2. Crea una copia archiviata del torneo con tutti i dati per consultazione
+    const archivedTournament = {
+      ...tournament,
+      status: 'archived',
+      endedAt: Date.now(),
+      completedAt: Date.now(),
+      finalLeaderboard,
+      // Salva snapshot dei dati al momento della terminazione
+      archivedData: {
+        teams: Object.values(teams).filter(team => team.tournamentId === tournamentId),
+        matches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved'),
+        adjustments: scoreAdjustments.filter(adj => adj.tournamentId === tournamentId),
+        totalTeams: Object.values(teams).filter(team => team.tournamentId === tournamentId).length,
+        totalMatches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved').length
       }
-
-      // 7. Sincronizzazione con il database
-      try {
-        if (typeof ApiService?.syncAllData === 'function') {
-          console.log('🔄 Sincronizzando terminazione torneo con database...');
-          
-          // Prepara tutti i dati aggiornati per la sincronizzazione
-          const updatedData = {
-            tournaments: {
-              ...tournaments,
-              [tournamentId]: archivedTournament
-            },
-            teams: (() => {
-              const newTeams = { ...teams };
-              tournamentTeamIds.forEach(teamId => {
-                delete newTeams[teamId];
-              });
-              return newTeams;
-            })(),
-            matches: matches.filter(match => match.tournamentId !== tournamentId),
-            pendingSubmissions: pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId),
-            scoreAdjustments: scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId),
-            managers: managers,
-            auditLogs: auditLogs
-          };
-          
-        // 7. Sincronizzazione con il database
-try {
-  if (typeof ApiService?.syncAllData === 'function') {
-    console.log('🔄 Sincronizzando terminazione torneo con database...');
-    
-    // Prepara tutti i dati aggiornati per la sincronizzazione
-    const updatedData = {
-      tournaments: {
-        ...tournaments,
-        [tournamentId]: archivedTournament
-      },
-      teams: (() => {
-        const newTeams = { ...teams };
-        tournamentTeamIds.forEach(teamId => {
-          delete newTeams[teamId];
-        });
-        return newTeams;
-      })(),
-      matches: matches.filter(match => match.tournamentId !== tournamentId),
-      pendingSubmissions: pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId),
-      scoreAdjustments: scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId),
-      managers: managers,
-      auditLogs: auditLogs
     };
-    
-    // Sincronizza con il database
-    await ApiService.syncAllData(updatedData);
-    console.log('✅ Terminazione torneo sincronizzata con database');
-    
-    // Salva anche nel localStorage come backup
-    localStorage.setItem('tournaments', JSON.stringify(updatedData.tournaments));
-    localStorage.setItem('teams', JSON.stringify(updatedData.teams));
-    localStorage.setItem('matches', JSON.stringify(updatedData.matches));
-    localStorage.setItem('pendingSubmissions', JSON.stringify(updatedData.pendingSubmissions));
-    localStorage.setItem('scoreAdjustments', JSON.stringify(updatedData.scoreAdjustments));
-    
-  } else {
-    console.warn('⚠️ ApiService non disponibile, salvando solo localStorage');
-    
-    // Solo localStorage se il database non è disponibile
-    localStorage.setItem('tournaments', JSON.stringify({
-      ...tournaments,
+
+    // 3. Salva nell'archivio
+    setTournaments(prev => ({
+      ...prev,
       [tournamentId]: archivedTournament
     }));
-    
-    const newTeams = { ...teams };
-    tournamentTeamIds.forEach(teamId => delete newTeams[teamId]);
-    localStorage.setItem('teams', JSON.stringify(newTeams));
-    localStorage.setItem('matches', JSON.stringify(matches.filter(match => match.tournamentId !== tournamentId)));
-    localStorage.setItem('pendingSubmissions', JSON.stringify(pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId)));
-    localStorage.setItem('scoreAdjustments', JSON.stringify(scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId)));
-  }
-} catch (syncError) {
-  console.error('❌ Errore durante la sincronizzazione:', syncError);
-  alert('⚠️ Torneo terminato localmente, ma errore nella sincronizzazione con il database. Verifica la connessione.');
-}
 
-console.log('✅ Torneo terminato completamente e archiviato');
-alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
+    // 4. ELIMINA COMPLETAMENTE tutti i dati operativi del torneo
 
-// 8. Chiudi il modal SOLO DOPO la sincronizzazione
-onClose();
+    // Elimina tutte le squadre del torneo (questo termina le loro sessioni)
+    const tournamentTeamIds = Object.values(teams)
+      .filter(team => team.tournamentId === tournamentId)
+      .map(team => team.id);
 
-      console.log('✅ Torneo terminato completamente e archiviato');
-      alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
+    setTeams(prev => {
+      const newTeams = { ...prev };
+      tournamentTeamIds.forEach(teamId => {
+        delete newTeams[teamId];
+      });
+      return newTeams;
+    });
 
-    } catch (error) {
-      console.error('❌ Errore durante la terminazione:', error);
-      alert('❌ Errore durante la terminazione del torneo');
+    // Elimina tutte le partite operative
+    setMatches(prev => prev.filter(match => match.tournamentId !== tournamentId));
+
+    // Elimina tutte le submission pendenti
+    setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== tournamentId));
+
+    // Elimina tutti gli aggiustamenti operativi
+    setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== tournamentId));
+
+    // 5. Log dell'eliminazione completa
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'TOURNAMENT_TERMINATED',
+      `Torneo terminato definitivamente: ${tournament.name} - ${finalLeaderboard.length} squadre, ${matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length} partite. Salvato in archivio per consultazione.`,
+      'admin',
+      'admin',
+      { 
+        tournamentId, 
+        tournamentName: tournament.name,
+        finalTeams: finalLeaderboard.length,
+        finalMatches: matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length
+      }
+    );
+
+    // 6. Broadcast per terminare tutte le sessioni attive
+    if ('BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('warzone-global-sync');
+        channel.postMessage({
+          type: 'tournament-terminated',
+          tournamentId: tournamentId,
+          message: `Il torneo "${tournament.name}" è stato terminato. Tutte le sessioni sono state chiuse.`,
+          timestamp: Date.now()
+        });
+        channel.close();
+      } catch (error) {
+        console.warn('Tournament termination broadcast failed:', error);
+      }
     }
-  };
+
+    // 7. Sincronizzazione con il database
+    try {
+      if (typeof ApiService?.syncAllData === 'function') {
+        console.log('🔄 Sincronizzando terminazione torneo con database...');
+        
+        // Prepara tutti i dati aggiornati per la sincronizzazione
+        const updatedData = {
+          tournaments: {
+            ...tournaments,
+            [tournamentId]: archivedTournament
+          },
+          teams: (() => {
+            const newTeams = { ...teams };
+            tournamentTeamIds.forEach(teamId => {
+              delete newTeams[teamId];
+            });
+            return newTeams;
+          })(),
+          matches: matches.filter(match => match.tournamentId !== tournamentId),
+          pendingSubmissions: pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId),
+          scoreAdjustments: scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId),
+          managers: managers,
+          auditLogs: auditLogs
+        };
+        
+        // Sincronizza con il database
+        await ApiService.syncAllData(updatedData);
+        console.log('✅ Terminazione torneo sincronizzata con database');
+        
+        // Salva anche nel localStorage come backup
+        localStorage.setItem('tournaments', JSON.stringify(updatedData.tournaments));
+        localStorage.setItem('teams', JSON.stringify(updatedData.teams));
+        localStorage.setItem('matches', JSON.stringify(updatedData.matches));
+        localStorage.setItem('pendingSubmissions', JSON.stringify(updatedData.pendingSubmissions));
+        localStorage.setItem('scoreAdjustments', JSON.stringify(updatedData.scoreAdjustments));
+        
+      } else {
+        console.warn('⚠️ ApiService non disponibile, salvando solo localStorage');
+        
+        // Solo localStorage se il database non è disponibile
+        localStorage.setItem('tournaments', JSON.stringify({
+          ...tournaments,
+          [tournamentId]: archivedTournament
+        }));
+        
+        const newTeams = { ...teams };
+        tournamentTeamIds.forEach(teamId => delete newTeams[teamId]);
+        localStorage.setItem('teams', JSON.stringify(newTeams));
+        localStorage.setItem('matches', JSON.stringify(matches.filter(match => match.tournamentId !== tournamentId)));
+        localStorage.setItem('pendingSubmissions', JSON.stringify(pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId)));
+        localStorage.setItem('scoreAdjustments', JSON.stringify(scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId)));
+      }
+    } catch (syncError) {
+      console.error('❌ Errore durante la sincronizzazione:', syncError);
+      alert('⚠️ Torneo terminato localmente, ma errore nella sincronizzazione con il database. Verifica la connessione.');
+    }
+
+     console.log('✅ Torneo terminato completamente e archiviato');
+    alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
+
+    // 8. Chiudi il modal SOLO DOPO la sincronizzazione
+    onClose();
+
+  } catch (error) {
+    console.error('❌ Errore durante la terminazione:', error);
+    alert('❌ Errore durante la terminazione del torneo');
+  }
+};
 
   const exportCSV = () => {
     const leaderboard = getLeaderboard();
