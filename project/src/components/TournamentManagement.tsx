@@ -150,6 +150,8 @@ export default function TournamentManagement({
 const registerTeam = async () => {
   if (!teamName.trim()) return;
   
+  console.log('🔍 [TEAM DEBUG] Starting team registration process...');
+  
   // Check if team already exists in this slot
   const existingTeam = Object.values(teams).find(t => 
     t.tournamentId === tournamentId && 
@@ -179,24 +181,86 @@ const registerTeam = async () => {
     tournamentId
   };
 
-  // Use sync wrapper for database + localStorage sync
+  console.log('🔍 [TEAM DEBUG] Tournament data:', tournament);
+  console.log('🔍 [TEAM DEBUG] New team data:', newTeam);
+  console.log('🔍 [TEAM DEBUG] Tournament ID:', tournamentId);
+
+  // STEP 1: Verifica che il backend sia raggiungibile
+  try {
+    console.log('🔍 [TEAM DEBUG] Checking backend connection...');
+    const backendOnline = await ApiService.checkBackendStatus();
+    
+    if (!backendOnline) {
+      console.warn('⚠️ [TEAM DEBUG] Backend is offline, registering only locally');
+      alert('⚠️ Backend non raggiungibile. La squadra sarà registrata solo localmente.\nI dati saranno sincronizzati quando la connessione sarà ripristinata.');
+    } else {
+      console.log('✅ [TEAM DEBUG] Backend is online and reachable');
+    }
+  } catch (connectionError) {
+    console.warn('⚠️ [TEAM DEBUG] Backend connection check failed:', connectionError);
+  }
+
+  // STEP 2: Verifica che il torneo esista nel database (solo se backend online)
+  try {
+    console.log('🔍 [TEAM DEBUG] Checking if tournament exists in database...');
+    const tournamentExists = await ApiService.getTournament(tournamentId);
+    console.log('✅ [TEAM DEBUG] Tournament exists in database:', tournamentExists);
+  } catch (tournamentError: any) {
+    console.warn('⚠️ [TEAM DEBUG] Tournament not found in database:', tournamentError.message);
+    
+    // Se il torneo non esiste, proviamo a crearlo
+    if (tournamentError.message?.includes('404') || tournamentError.status === 404) {
+      console.log('🔍 [TEAM DEBUG] Attempting to create tournament in database...');
+      
+      try {
+        await ApiService.createTournament(tournament);
+        console.log('✅ [TEAM DEBUG] Tournament created in database successfully');
+      } catch (createTournamentError: any) {
+        console.error('❌ [TEAM DEBUG] Failed to create tournament in database:', createTournamentError);
+        console.warn('⚠️ [TEAM DEBUG] Continuing with local-only registration');
+      }
+    } else {
+      console.error('❌ [TEAM DEBUG] Tournament verification failed with non-404 error:', tournamentError);
+    }
+  }
+
+  // STEP 3: Use sync wrapper for database + localStorage sync
   const syncResult = await ApiService.syncOperation({
     localUpdate: () => {
       // Update local state immediately for responsive UI
       setTeams(prev => ({ ...prev, [key]: newTeam }));
+      console.log('✅ [TEAM DEBUG] Local team state updated');
     },
-    apiCall: () => ApiService.createTeam(newTeam),
+    apiCall: async () => {
+      console.log('🔍 [TEAM DEBUG] Sending team to database...');
+      console.log('📡 [TEAM DEBUG] Team payload:', JSON.stringify(newTeam, null, 2));
+      
+      const result = await ApiService.createTeam(newTeam);
+      console.log('✅ [TEAM DEBUG] Team created in database:', result);
+      return result;
+    },
     storageKey: 'teams',
     storageData: { ...teams, [key]: newTeam },
     operationName: `Team Registration: ${teamName.trim()}`
   });
 
-  // Handle sync result
+  // Handle sync result with detailed feedback
   if (syncResult.success) {
-    console.log('✅ Team registered and synced to database successfully');
+    console.log('✅ [TEAM DEBUG] Team registered and synced to database successfully');
   } else {
-    console.warn('⚠️ Team registered locally, database sync failed:', syncResult.error);
-    // Note: We don't show alert here since team registration should be seamless
+    console.warn('⚠️ [TEAM DEBUG] Team registered locally, database sync failed:', syncResult.error);
+    console.log('📋 [TEAM DEBUG] Sync result details:', syncResult.details);
+    
+    // Mostra feedback specifico basato sul tipo di errore
+    if (syncResult.details?.status === 500) {
+      console.error('🔥 [TEAM DEBUG] Server error 500 - Backend internal error');
+      alert(`🔥 Errore del server (500): ${syncResult.error}\n\n✅ La squadra è stata registrata localmente e funziona normalmente.\n⚠️ Sincronizzazione database fallita - contatta l'amministratore.`);
+    } else if (syncResult.details?.status === 404) {
+      console.error('❌ [TEAM DEBUG] Not found error 404 - Endpoint missing');
+      alert(`❌ Endpoint non trovato (404): ${syncResult.error}\n\n✅ La squadra è stata registrata localmente e funziona normalmente.\n⚠️ API endpoint mancante - contatta l'amministratore.`);
+    } else {
+      console.error('❓ [TEAM DEBUG] Unknown sync error:', syncResult.error);
+    }
   }
 
   // Reset form
@@ -213,8 +277,9 @@ const registerTeam = async () => {
         timestamp: Date.now()
       });
       channel.close();
+      console.log('📡 [TEAM DEBUG] Team creation broadcasted successfully');
     } catch (error) {
-      console.warn('Team broadcast failed:', error);
+      console.warn('📡 [TEAM DEBUG] Team broadcast failed:', error);
     }
   }
   
@@ -231,6 +296,8 @@ const registerTeam = async () => {
     'admin',
     { teamCode: code, teamName: teamName.trim(), tournamentId, lobby: key }
   );
+
+  console.log('🏁 [TEAM DEBUG] Team registration process completed');
 };
 
 const removeTeam = async (teamId: string) => {
