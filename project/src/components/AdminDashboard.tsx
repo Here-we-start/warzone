@@ -49,6 +49,48 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
+  // ✅ FUNZIONE DI DEBUG TEMPORANEA - POSIZIONE 1
+  const debugDatabaseConnection = async () => {
+    console.log('🔍 [DEBUG] === DIAGNOSTICA COMPLETA DATABASE ===');
+    
+    // Test 1: Verifica esistenza ApiService
+    console.log('🔍 [DEBUG] 1. ApiService disponibile:', typeof ApiService);
+    console.log('🔍 [DEBUG] 2. getAllTeams disponibile:', typeof ApiService?.getAllTeams);
+    
+    // Test 2: Prova chiamata diretta
+    if (typeof ApiService?.getAllTeams === 'function') {
+      try {
+        console.log('🔍 [DEBUG] 3. Chiamata diretta getAllTeams...');
+        const result = await ApiService.getAllTeams();
+        console.log('🔍 [DEBUG] 4. Risultato RAW:', result);
+        console.log('🔍 [DEBUG] 5. Tipo risultato:', typeof result);
+        console.log('🔍 [DEBUG] 6. È array?', Array.isArray(result));
+        console.log('🔍 [DEBUG] 7. Chiavi oggetto:', Object.keys(result || {}));
+        
+        // Test proprietà specifiche
+        if (result && typeof result === 'object') {
+          console.log('🔍 [DEBUG] 8. Proprietà .teams:', result.teams);
+          console.log('🔍 [DEBUG] 9. Proprietà .data:', result.data);
+          
+          if (Array.isArray(result)) {
+            console.log('🔍 [DEBUG] 10. Lunghezza array:', result.length);
+            if (result.length > 0) {
+              console.log('🔍 [DEBUG] 11. Primo elemento:', result[0]);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('🔍 [DEBUG] 12. ERRORE chiamata:', error);
+      }
+    }
+    
+    // Test 3: Verifica localStorage
+    const localTeams = localStorage.getItem('teams');
+    console.log('🔍 [DEBUG] 13. localStorage teams:', localTeams ? JSON.parse(localTeams) : 'VUOTO');
+    
+    console.log('🔍 [DEBUG] === FINE DIAGNOSTICA ===');
+  };
+
   // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO CON FIX TEAMS
   useEffect(() => {
     const loadAllDataWithMultiDeviceSync = async () => {
@@ -591,6 +633,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       }
     };
   }, [tournaments, teams, matches, pendingSubmissions, scoreAdjustments, managers]); // Re-run when any data changes
+
+  // ✅ USEEFFECT DI DEBUG - POSIZIONE 2
+  useEffect(() => {
+    // Debug automatico dopo 2 secondi
+    const debugTimer = setTimeout(() => {
+      debugDatabaseConnection();
+    }, 2000);
+    
+    return () => clearTimeout(debugTimer);
+  }, []); // Esegui solo una volta
 
   // ✅ APPROVE SUBMISSION WITH MULTI-DEVICE SYNC
   const approveSubmission = async (submissionId: string) => {
@@ -1188,39 +1240,21 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 sm:space-x-4">
               <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="sm:hidden p-2 text-ice-blue hover:bg-ice-blue/10 rounded-lg transition-colors"
-              >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-ice-blue/20 to-ice-blue-dark/20 relative">
-                <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-ice-blue animate-float" />
-                <div className="absolute inset-0 rounded-full bg-ice-blue/10 animate-ping" />
-              </div>
-              <div>
-                <h1 className="text-lg sm:text-3xl font-bold text-white font-mono tracking-wider animate-glow">
-                  ADMIN CONTROL
-                </h1>
-                <p className="text-ice-blue/80 font-mono text-xs sm:text-base">
-                  Sistema di Gestione Tornei Multi-Dispositivo
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <button
-                onClick={() => setShowLoginCodes(true)}
-                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
-              >
-                <Key className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">CODICI</span>
-              </button>
-              <button
                 onClick={() => setShowOBSPlugin(true)}
                 className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs sm:text-sm"
               >
                 <Tv className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">OBS</span>
               </button>
+              
+              {/* ✅ PULSANTE DEBUG TEMPORANEO - POSIZIONE 3 */}
+              <button
+                onClick={debugDatabaseConnection}
+                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors font-mono text-xs sm:text-sm"
+              >
+                🔍 DEBUG DB
+              </button>
+              
               <button
                 onClick={() => setShowTournamentCreator(true)}
                 className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-green-500/20 border border-green-500/50 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors font-mono text-xs sm:text-sm"
@@ -1290,6 +1324,12 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 <Key className="w-4 h-4" />
                 <span>CODICI ACCESSO</span>
+              </button>
+              <button
+                onClick={debugDatabaseConnection}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors font-mono text-xs"
+              >
+                🔍 DEBUG DATABASE
               </button>
               <button
                 onClick={() => setShowTournamentCreator(true)}
@@ -1428,6 +1468,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     </button>
                   )}
                   <button
+                    onClick={debugDatabaseConnection}
+                    className="w-full flex items-center space-x-3 p-4 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 rounded-lg hover:bg-yellow-500/20 transition-colors font-mono"
+                  >
+                    🔍
+                    <span>Debug Database</span>
+                  </button>
+                  <button
                     onClick={() => setShowLoginCodes(true)}
                     className="w-full flex items-center space-x-3 p-4 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors font-mono"
                   >
@@ -1523,7 +1570,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             © 2025 BM Solution - Sviluppo Applicazioni
           </div>
           <div className="text-xs text-ice-blue/30 font-mono mt-1">
-            Advanced Tournament Management System v4.1 - Multi-Device Sync with Teams Fix
+            Advanced Tournament Management System v4.2 - Multi-Device Sync with Debug Tools
           </div>
         </div>
       </div>
@@ -1681,3 +1728,37 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     </div>
   );
 }
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="sm:hidden p-2 text-ice-blue hover:bg-ice-blue/10 rounded-lg transition-colors"
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-ice-blue/20 to-ice-blue-dark/20 relative">
+                <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-ice-blue animate-float" />
+                <div className="absolute inset-0 rounded-full bg-ice-blue/10 animate-ping" />
+              </div>
+              <div>
+                <h1 className="text-lg sm:text-3xl font-bold text-white font-mono tracking-wider animate-glow">
+                  ADMIN CONTROL
+                </h1>
+                <p className="text-ice-blue/80 font-mono text-xs sm:text-base">
+                  Sistema di Gestione Tornei Multi-Dispositivo
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <button
+                onClick={() => setShowLoginCodes(true)}
+                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
+              >
+                <Key className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">CODICI</span>
+              </button>
+              <button
+                onClick={() => setShowOBSPlugin(true)}
+                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs sm:text-sm"
+              >
+                <Tv className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">OBS</span>
+              </button>
+              <button
