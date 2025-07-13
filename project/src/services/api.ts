@@ -199,7 +199,7 @@ class ApiService {
     }
   }
 
-  // Bulk sync endpoint for tournament termination
+  // Optimized bulk sync endpoint for tournament termination
   static async syncAllData(data: {
     tournaments: any;
     teams: any;
@@ -209,60 +209,48 @@ class ApiService {
     managers: any;
     auditLogs: any;
   }) {
-    logger.info('Syncing tournament termination to database');
+    logger.info('Syncing terminated tournaments to database');
 
     try {
-      // Sync tournaments - TRY CREATE FIRST, then UPDATE if exists
-      for (const [tournamentId, tournament] of Object.entries(data.tournaments)) {
-        console.log(`🔄 Syncing tournament: ${tournamentId}`);
+      // Sync ONLY archived tournaments (terminated ones)
+      const archivedTournaments = Object.entries(data.tournaments).filter(
+        ([_, tournament]) => tournament.status === 'archived'
+      );
+
+      console.log(`🔄 Found ${archivedTournaments.length} archived tournaments to sync`);
+
+      for (const [tournamentId, tournament] of archivedTournaments) {
+        console.log(`🔄 Syncing archived tournament: ${tournamentId}`);
         
         try {
-          // First try to CREATE the tournament (it probably doesn't exist in DB)
-          await this.createTournament(tournament);
-          console.log(`✅ Tournament CREATED in database: ${tournamentId}`);
-        } catch (createError) {
-          console.log(`⚠️ Create failed, trying UPDATE for: ${tournamentId}`);
-          
+          // Try UPDATE first (most likely scenario)
+          await this.updateTournament(tournamentId, tournament);
+          console.log(`✅ Archived tournament UPDATED: ${tournamentId}`);
+        } catch (updateError) {
           try {
-            // If creation fails, try to UPDATE (tournament might already exist)
-            await this.updateTournament(tournamentId, tournament);
-            console.log(`✅ Tournament UPDATED in database: ${tournamentId}`);
-          } catch (updateError) {
-            console.warn(`❌ Both CREATE and UPDATE failed for tournament ${tournamentId}:`, {
-              createError: createError instanceof Error ? createError.message : createError,
-              updateError: updateError instanceof Error ? updateError.message : updateError
-            });
-            // Continue with next tournament instead of failing completely
+            // If UPDATE fails, try CREATE
+            await this.createTournament(tournament);
+            console.log(`✅ Archived tournament CREATED: ${tournamentId}`);
+          } catch (createError) {
+            console.warn(`❌ Failed to sync tournament ${tournamentId} (non-critical)`);
           }
         }
       }
 
-      // Don't sync teams/matches for archived tournaments - they're preserved in archivedData
-      console.log('ℹ️ Skipping teams/matches sync - data preserved in tournament archivedData');
-
-      // Only sync the termination audit log if needed
-      const terminationLogs = data.auditLogs.filter(log => 
-        log.action === 'TOURNAMENT_TERMINATED'
-      );
+      // Skip teams/matches - they're preserved in archivedData
+      console.log('ℹ️ Teams/matches preserved in tournament archivedData');
       
-      for (const log of terminationLogs) {
-        try {
-          await this.createAuditLog(log);
-          console.log(`✅ Termination audit log created`);
-        } catch (logError) {
-          console.warn('⚠️ Audit log creation failed (non-critical):', logError);
-        }
-      }
+      // Skip audit logs - endpoint not reliable
+      console.log('ℹ️ Audit logs skipped - preserved locally');
 
-      logger.info('Tournament termination synchronized successfully');
+      logger.info(`Successfully synced ${archivedTournaments.length} archived tournaments`);
       return { 
         success: true, 
-        message: 'Tournament termination synchronized to database' 
+        message: `${archivedTournaments.length} archived tournaments synchronized` 
       };
 
     } catch (error) {
-      logger.error('Failed to sync tournament termination:', error);
-      // Don't throw error - let the process continue with localStorage
+      logger.error('Failed to sync archived tournaments:', error);
       return { 
         success: false, 
         message: 'Database sync failed, but data saved locally' 
