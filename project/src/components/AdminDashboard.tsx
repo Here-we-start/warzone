@@ -48,45 +48,109 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showManualSubmission, setShowManualSubmission] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  // Load tournaments from database on component mount
+  // Load tournaments with priority sync strategy
   useEffect(() => {
-    const loadTournamentsFromDatabase = async () => {
+    const loadTournamentsWithSync = async () => {
       try {
-        console.log('📡 Loading tournaments from database...');
+        console.log('📡 Loading tournaments with sync priority...');
         
         // Check if ApiService exists and has the method
         if (typeof ApiService?.getAllTournaments === 'function') {
-          const tournamentsFromDB = await ApiService.getAllTournaments();
-          
-          if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
-            setTournaments(tournamentsFromDB);
-            localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
-            console.log('✅ Tournaments loaded from database:', Object.keys(tournamentsFromDB).length);
-          } else {
-            console.log('📭 No tournaments found in database');
+          try {
+            // TRY DATABASE FIRST - for multi-device sync
+            const tournamentsFromDB = await ApiService.getAllTournaments();
+            
+            if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
+              setTournaments(tournamentsFromDB);
+              localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
+              console.log('✅ Tournaments loaded from database (PRIORITY):', Object.keys(tournamentsFromDB).length);
+              return; // SUCCESS - stop here
+            } else {
+              console.log('📭 No tournaments found in database, checking localStorage...');
+            }
+          } catch (dbError) {
+            console.warn('⚠️ Database unavailable, falling back to localStorage:', dbError.message);
           }
         } else {
-          console.log('⚠️ ApiService not available, loading from localStorage only');
-          throw new Error('ApiService not configured');
+          console.log('⚠️ ApiService not available, checking localStorage...');
         }
-      } catch (error) {
-        console.warn('⚠️ Database not available, loading from localStorage:', error.message);
-        // Fallback to localStorage if database fails
-        try {
-          const localTournaments = localStorage.getItem('tournaments');
-          if (localTournaments) {
-            const parsed = JSON.parse(localTournaments);
-            setTournaments(parsed);
-            console.log('📂 Loaded tournaments from localStorage as fallback');
+
+        // FALLBACK to localStorage only if database completely fails
+        const localTournaments = localStorage.getItem('tournaments');
+        if (localTournaments) {
+          const parsed = JSON.parse(localTournaments);
+          setTournaments(parsed);
+          console.log('📂 Loaded tournaments from localStorage (FALLBACK)');
+          
+          // Try to sync localStorage data to database in background
+          if (typeof ApiService?.syncAllData === 'function') {
+            console.log('🔄 Attempting to sync local data to database...');
+            setTimeout(async () => {
+              try {
+                await ApiService.syncAllData({
+                  tournaments: parsed,
+                  teams: {},
+                  matches: [],
+                  pendingSubmissions: [],
+                  scoreAdjustments: [],
+                  managers: {},
+                  auditLogs: []
+                });
+                console.log('✅ Local data synced to database');
+              } catch (syncError) {
+                console.warn('⚠️ Failed to sync local data to database:', syncError.message);
+              }
+            }, 2000);
           }
-        } catch (localError) {
-          console.error('❌ Failed to load from localStorage too:', localError);
+        } else {
+          console.log('📭 No tournaments found anywhere - fresh start');
         }
+        
+      } catch (error) {
+        console.error('❌ Critical error loading tournaments:', error);
       }
     };
 
-    loadTournamentsFromDatabase();
+    loadTournamentsWithSync();
   }, []); // Run once on component mount
+
+  // Add periodic sync for multi-device synchronization
+  useEffect(() => {
+    let syncInterval: NodeJS.Timeout;
+
+    if (typeof ApiService?.getAllTournaments === 'function') {
+      console.log('🔄 Setting up periodic sync for multi-device support...');
+      
+      syncInterval = setInterval(async () => {
+        try {
+          console.log('🔄 Periodic sync check...');
+          const tournamentsFromDB = await ApiService.getAllTournaments();
+          
+          if (tournamentsFromDB) {
+            const currentTournaments = JSON.stringify(tournaments);
+            const newTournaments = JSON.stringify(tournamentsFromDB);
+            
+            // Only update if there are actual changes
+            if (currentTournaments !== newTournaments) {
+              console.log('🔄 Changes detected - updating tournaments...');
+              setTournaments(tournamentsFromDB);
+              localStorage.setItem('tournaments', newTournaments);
+              console.log('✅ Tournaments synchronized with database');
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Periodic sync failed (probably offline):', error.message);
+        }
+      }, 30000); // Sync every 30 seconds
+    }
+
+    return () => {
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        console.log('🔄 Periodic sync stopped');
+      }
+    };
+  }, [tournaments]); // Re-run when tournaments change
 
   const approveSubmission = (submissionId: string) => {
     const submission = pendingSubmissions.find(s => s.id === submissionId);
