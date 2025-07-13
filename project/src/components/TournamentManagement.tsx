@@ -201,28 +201,34 @@ const registerTeam = async () => {
   }
 
   // STEP 2: Verifica che il torneo esista nel database (solo se backend online)
-  try {
-    console.log('🔍 [TEAM DEBUG] Checking if tournament exists in database...');
-    const tournamentExists = await ApiService.getTournament(tournamentId);
-    console.log('✅ [TEAM DEBUG] Tournament exists in database:', tournamentExists);
-  } catch (tournamentError: any) {
-    console.warn('⚠️ [TEAM DEBUG] Tournament not found in database:', tournamentError.message);
+try {
+  console.log('🔍 [TEAM DEBUG] Checking if tournament exists in database...');
+  const tournamentExists = await ApiService.getTournament(tournamentId);
+  console.log('✅ [TEAM DEBUG] Tournament exists in database:', tournamentExists);
+} catch (tournamentError: any) {
+  console.warn('⚠️ [TEAM DEBUG] Tournament not found in database:', tournamentError.message);
+  
+  // NUOVO: Check più robusto per 404 - considera tutti i casi
+  const is404Error = 
+    tournamentError.message?.includes('404') || 
+    tournamentError.message?.includes('not found') ||
+    tournamentError.message?.toLowerCase().includes('tournament not found');
+  
+  if (is404Error) {
+    console.log('🔍 [TEAM DEBUG] Attempting to create tournament in database...');
     
-    // Se il torneo non esiste, proviamo a crearlo
-    if (tournamentError.message?.includes('404') || tournamentError.status === 404) {
-      console.log('🔍 [TEAM DEBUG] Attempting to create tournament in database...');
-      
-      try {
-        await ApiService.createTournament(tournament);
-        console.log('✅ [TEAM DEBUG] Tournament created in database successfully');
-      } catch (createTournamentError: any) {
-        console.error('❌ [TEAM DEBUG] Failed to create tournament in database:', createTournamentError);
-        console.warn('⚠️ [TEAM DEBUG] Continuing with local-only registration');
-      }
-    } else {
-      console.error('❌ [TEAM DEBUG] Tournament verification failed with non-404 error:', tournamentError);
+    try {
+      await ApiService.createTournament(tournament);
+      console.log('✅ [TEAM DEBUG] Tournament created in database successfully');
+    } catch (createTournamentError: any) {
+      console.error('❌ [TEAM DEBUG] Failed to create tournament in database:', createTournamentError);
+      console.warn('⚠️ [TEAM DEBUG] Continuing with local-only registration');
     }
+  } else {
+    console.error('❌ [TEAM DEBUG] Tournament verification failed with non-404 error:', tournamentError);
+    console.warn('⚠️ [TEAM DEBUG] Continuing with local-only registration');
   }
+}
 
   // STEP 3: Use sync wrapper for database + localStorage sync
   const syncResult = await ApiService.syncOperation({
