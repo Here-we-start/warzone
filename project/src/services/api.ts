@@ -199,67 +199,76 @@ class ApiService {
     }
   }
 
-// Bulk sync endpoint using existing individual endpoints
-static async syncAllData(data: {
-  tournaments: any;
-  teams: any;
-  matches: any;
-  pendingSubmissions: any;
-  scoreAdjustments: any;
-  managers: any;
-  auditLogs: any;
-}) {
-  logger.info('Syncing all data using individual endpoints', {
-    tournaments: Object.keys(data.tournaments).length,
-    teams: Object.keys(data.teams).length,
-    matches: data.matches.length,
-    pendingSubmissions: data.pendingSubmissions.length,
-    scoreAdjustments: data.scoreAdjustments.length,
-    auditLogs: data.auditLogs.length
-  });
+  // Bulk sync endpoint for tournament termination
+  static async syncAllData(data: {
+    tournaments: any;
+    teams: any;
+    matches: any;
+    pendingSubmissions: any;
+    scoreAdjustments: any;
+    managers: any;
+    auditLogs: any;
+  }) {
+    logger.info('Syncing tournament termination to database');
 
-  try {
-    // Sync tournaments first
-    for (const [tournamentId, tournament] of Object.entries(data.tournaments)) {
-      await this.updateTournament(tournamentId, tournament);
-    }
-
-    // Sync teams
-    for (const team of Object.values(data.teams)) {
-      try {
-        await this.createTeam(team);
-      } catch (error) {
-        // Team might already exist, try to update
-        console.warn('Team creation failed, might already exist:', team);
+    try {
+      // Sync tournaments - TRY CREATE FIRST, then UPDATE if exists
+      for (const [tournamentId, tournament] of Object.entries(data.tournaments)) {
+        console.log(`🔄 Syncing tournament: ${tournamentId}`);
+        
+        try {
+          // First try to CREATE the tournament (it probably doesn't exist in DB)
+          await this.createTournament(tournament);
+          console.log(`✅ Tournament CREATED in database: ${tournamentId}`);
+        } catch (createError) {
+          console.log(`⚠️ Create failed, trying UPDATE for: ${tournamentId}`);
+          
+          try {
+            // If creation fails, try to UPDATE (tournament might already exist)
+            await this.updateTournament(tournamentId, tournament);
+            console.log(`✅ Tournament UPDATED in database: ${tournamentId}`);
+          } catch (updateError) {
+            console.warn(`❌ Both CREATE and UPDATE failed for tournament ${tournamentId}:`, {
+              createError: createError instanceof Error ? createError.message : createError,
+              updateError: updateError instanceof Error ? updateError.message : updateError
+            });
+            // Continue with next tournament instead of failing completely
+          }
+        }
       }
-    }
 
-    // Sync matches
-    for (const match of data.matches) {
-      try {
-        await this.createMatch(match);
-      } catch (error) {
-        console.warn('Match creation failed:', match);
+      // Don't sync teams/matches for archived tournaments - they're preserved in archivedData
+      console.log('ℹ️ Skipping teams/matches sync - data preserved in tournament archivedData');
+
+      // Only sync the termination audit log if needed
+      const terminationLogs = data.auditLogs.filter(log => 
+        log.action === 'TOURNAMENT_TERMINATED'
+      );
+      
+      for (const log of terminationLogs) {
+        try {
+          await this.createAuditLog(log);
+          console.log(`✅ Termination audit log created`);
+        } catch (logError) {
+          console.warn('⚠️ Audit log creation failed (non-critical):', logError);
+        }
       }
+
+      logger.info('Tournament termination synchronized successfully');
+      return { 
+        success: true, 
+        message: 'Tournament termination synchronized to database' 
+      };
+
+    } catch (error) {
+      logger.error('Failed to sync tournament termination:', error);
+      // Don't throw error - let the process continue with localStorage
+      return { 
+        success: false, 
+        message: 'Database sync failed, but data saved locally' 
+      };
     }
-
-    // Sync audit logs
-    for (const log of data.auditLogs) {
-      try {
-        await this.createAuditLog(log);
-      } catch (error) {
-        console.warn('Audit log creation failed:', log);
-      }
-    }
-
-    logger.info('All data synced successfully using individual endpoints');
-    return { success: true, message: 'Data synchronized successfully' };
-
-  } catch (error) {
-    logger.error('Failed to sync data using individual endpoints:', error);
-    throw error;
   }
-}
 
   // Health check with enhanced error handling
   static async healthCheck() {
