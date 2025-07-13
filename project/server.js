@@ -1,4 +1,4 @@
-// PRODUCTION-READY WARZONE TOURNAMENT SERVER - VERSIONE CORRETTA
+// PRODUCTION-READY WARZONE TOURNAMENT SERVER - VERSIONE CORRETTA FINALE
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -319,7 +319,7 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// Database Schemas
+// Tournament Schema with enhanced validation
 const tournamentSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 100 },
   type: { type: String, enum: ['Ritorno', 'BR'], default: 'Ritorno' },
@@ -341,6 +341,7 @@ const tournamentSchema = new mongoose.Schema({
   isDemo: { type: Boolean, default: false }
 });
 
+// Team Schema with enhanced validation
 const teamSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 50 },
   code: { type: String, required: true, unique: true, maxlength: 20 },
@@ -354,6 +355,7 @@ const teamSchema = new mongoose.Schema({
   clanName: { type: String, maxlength: 50 }
 });
 
+// Match Schema with enhanced validation
 const matchSchema = new mongoose.Schema({
   position: { type: Number, required: true, min: 1, max: 100 },
   kills: { type: Number, required: true, min: 0, max: 100 },
@@ -368,6 +370,7 @@ const matchSchema = new mongoose.Schema({
   rejectionReason: String
 });
 
+// Pending Submission Schema
 const pendingSubmissionSchema = new mongoose.Schema({
   teamCode: { type: String, required: true, maxlength: 20 },
   teamName: { type: String, required: true, maxlength: 50 },
@@ -378,6 +381,7 @@ const pendingSubmissionSchema = new mongoose.Schema({
   tournamentId: { type: String, required: true }
 });
 
+// Score Adjustment Schema
 const scoreAdjustmentSchema = new mongoose.Schema({
   teamCode: { type: String, required: true, maxlength: 20 },
   teamName: { type: String, required: true, maxlength: 50 },
@@ -389,6 +393,7 @@ const scoreAdjustmentSchema = new mongoose.Schema({
   tournamentId: { type: String, required: true }
 });
 
+// Manager Schema
 const managerSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 50 },
   code: { type: String, required: true, unique: true, maxlength: 20 },
@@ -398,6 +403,7 @@ const managerSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true }
 });
 
+// Audit Log Schema
 const auditLogSchema = new mongoose.Schema({
   action: { type: String, required: true, maxlength: 100 },
   details: { type: String, required: true, maxlength: 500 },
@@ -652,6 +658,35 @@ app.delete('/api/tournaments/:id', async (req, res) => {
   }
 });
 
+// Get teams for tournament
+app.get('/api/tournaments/:id/teams', async (req, res) => {
+  try {
+    const tournament = await findTournamentById(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const actualTournamentId = tournament._id.toString();
+    
+    const teams = await Team.find({
+      $or: [
+        { tournamentId: actualTournamentId },
+        { tournamentId: req.params.id }
+      ]
+    }).lean();
+    
+    const formattedTeams = teams.map(team => ({
+      ...team,
+      id: team._id.toString()
+    }));
+    
+    res.json({ success: true, teams: formattedTeams });
+  } catch (error) {
+    logger.error('Get teams error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to fetch teams' });
+  }
+});
+
 // =====================================
 // API ROUTES - TEAMS
 // =====================================
@@ -744,12 +779,12 @@ app.get('/api/teams/:id', async (req, res) => {
   }
 });
 
-// Get teams for tournament
-app.get('/api/tournaments/:id/teams', async (req, res) => {
+// Get teams by tournament ID
+app.get('/api/teams/tournament/:tournamentId', async (req, res) => {
   try {
-    console.log('📡 [API] GET /api/tournaments/' + req.params.id + '/teams');
+    console.log('📡 [API] GET /api/teams/tournament/' + req.params.tournamentId);
     
-    const tournament = await findTournamentById(req.params.id);
+    const tournament = await findTournamentById(req.params.tournamentId);
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
@@ -759,22 +794,33 @@ app.get('/api/tournaments/:id/teams', async (req, res) => {
     const teams = await Team.find({
       $or: [
         { tournamentId: actualTournamentId },
-        { tournamentId: req.params.id }
+        { tournamentId: req.params.tournamentId }
       ]
     }).lean();
     
-    const formattedTeams = teams.map(team => ({
-      ...team,
-      id: team._id.toString()
-    }));
+    // Convert to object format for frontend
+    const teamsObject = teams.reduce((acc, team) => {
+      const key = team.slotId || 
+                  team.lobby || 
+                  team._id.toString() || 
+                  `${team.tournamentId}-Lobby${team.lobbyNumber || 1}-Slot${team.slotNumber || 1}`;
+      
+      acc[key] = {
+        ...team,
+        id: team._id.toString(),
+        slotId: team.slotId || key,
+        lobby: team.lobby || key
+      };
+      return acc;
+    }, {});
     
-    console.log(`✅ Found ${formattedTeams.length} teams for tournament`);
+    console.log(`✅ Found ${teams.length} teams for tournament ${req.params.tournamentId}`);
     
-    res.json({ success: true, teams: formattedTeams });
+    res.json({ success: true, teams: teamsObject });
   } catch (error) {
-    console.error('❌ Get teams error:', error.message);
-    logger.error('Get teams error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to fetch teams' });
+    console.error('❌ Error fetching teams for tournament:', error);
+    logger.error('Get teams for tournament error', { error: error.message, tournamentId: req.params.tournamentId, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to fetch teams for tournament' });
   }
 });
 
@@ -1579,9 +1625,6 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   try {
-    console.log('🔍 Health check requested');
-    console.log('📊 MongoDB state:', mongoose.connection.readyState);
-    
     const mongoStates = {
       0: 'disconnected',
       1: 'connected',
@@ -1603,8 +1646,6 @@ app.get('/api/health', (req, res) => {
       nodeVersion: process.version,
       warnings: mongoose.connection.readyState !== 1 ? ['MongoDB not connected'] : []
     };
-    
-    console.log('✅ Health data prepared:', healthData.status);
     
     res.json(healthData);
   } catch (error) {
