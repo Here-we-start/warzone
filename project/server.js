@@ -529,48 +529,43 @@ app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async
     console.log('📝 ===== TOURNAMENT CREATION DEBUG =====');
     console.log('📄 Request body:', JSON.stringify(req.body, null, 2));
     console.log('🔗 MongoDB connection state:', mongoose.connection.readyState);
-    console.log('📊 Database name:', mongoose.connection.name);
     
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      console.error('❌ MongoDB not connected! State:', mongoose.connection.readyState);
-      return res.status(503).json({ 
-        success: false, 
-        error: 'Database not connected',
-        mongoState: mongoose.connection.readyState
-      });
-    }
+    // Remove custom ID and let MongoDB generate _id automatically
+    const { id, ...tournamentData } = req.body;
+    console.log('🔄 Removed custom ID, using MongoDB auto-generated _id');
+    console.log('📄 Clean tournament data:', JSON.stringify(tournamentData, null, 2));
     
     console.log('🏗️ Creating Tournament object...');
-    const tournament = new Tournament(req.body);
+    const tournament = new Tournament(tournamentData);
     console.log('🏗️ Tournament object created successfully');
-    console.log('🏗️ Tournament object data:', JSON.stringify(tournament.toObject(), null, 2));
     
     console.log('💾 Attempting to save tournament to MongoDB...');
     await tournament.save();
-    console.log('✅ Tournament saved successfully! ID:', tournament._id);
+    console.log('✅ Tournament saved successfully! MongoDB _id:', tournament._id);
+    
+    // Create response data with frontend-compatible format
+    const responseData = {
+      ...tournament.toObject(),
+      id: tournament._id.toString() // Frontend expects 'id' field
+    };
+    
+    console.log('📤 Response data prepared:', JSON.stringify(responseData, null, 2));
     
     logger.info('Tournament created', { 
       tournamentId: tournament._id, 
       name: tournament.name,
-      createdBy: req.body.createdBy || 'admin',
+      createdBy: tournamentData.createdBy || 'admin',
       ip: req.ip 
     });
     
     // Emit to all connected clients
-    io.emit('tournamentCreated', { 
-      tournament: {
-        ...tournament.toObject(),
-        id: tournament._id.toString()
-      }
-    });
+    io.emit('tournamentCreated', { tournament: responseData });
     
-    res.json({ success: true, tournament });
+    res.json({ success: true, tournament: responseData });
   } catch (error) {
     console.error('❌ ===== DETAILED ERROR ANALYSIS =====');
     console.error('❌ Error message:', error.message);
     console.error('❌ Error name:', error.name);
-    console.error('❌ Error code:', error.code);
     console.error('❌ Error stack:', error.stack);
     
     if (error.name === 'ValidationError') {
@@ -580,22 +575,12 @@ app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async
       });
     }
     
-    if (error.name === 'MongoServerError') {
-      console.error('❌ MongoDB error details:', {
-        code: error.code,
-        codeName: error.codeName,
-        keyPattern: error.keyPattern,
-        keyValue: error.keyValue
-      });
-    }
-    
     logger.error('Create tournament error', { error: error.message, ip: req.ip });
     res.status(500).json({ 
       success: false, 
       error: 'Failed to create tournament',
       details: error.message,
-      errorType: error.name,
-      errorCode: error.code
+      errorType: error.name
     });
   }
 });
