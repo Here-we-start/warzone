@@ -199,6 +199,31 @@ class ApiService {
     }
   }
 
+  // Bulk sync endpoint for complete data synchronization
+  static async syncAllData(data: {
+    tournaments: any;
+    teams: any;
+    matches: any;
+    pendingSubmissions: any;
+    scoreAdjustments: any;
+    managers: any;
+    auditLogs: any;
+  }) {
+    logger.info('Syncing all data to backend', {
+      tournaments: Object.keys(data.tournaments).length,
+      teams: Object.keys(data.teams).length,
+      matches: data.matches.length,
+      pendingSubmissions: data.pendingSubmissions.length,
+      scoreAdjustments: data.scoreAdjustments.length,
+      auditLogs: data.auditLogs.length
+    });
+
+    return this.request('/api/sync/all', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
   // Health check with enhanced error handling
   static async healthCheck() {
     try {
