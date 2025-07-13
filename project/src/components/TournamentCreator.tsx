@@ -70,32 +70,67 @@ export default function TournamentCreator({
       }
     };
 
-    // Update local state first (like it was working before)
-    setTournaments(prev => {
-      const updatedTournaments = { ...prev, [tournamentId]: newTournament };
-      
-      // Save to localStorage (like before)
-      try {
-        localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
-        console.log('✅ Tournament saved to localStorage');
-      } catch (localError) {
-        console.error('❌ Failed to save tournament to localStorage:', localError);
-      }
-      
-      return updatedTournaments;
-    });
-
-    // Try to sync with backend in background (non-blocking)
+    // PRIORITY: Try to save to database first for multi-device sync
     if (typeof ApiService?.createTournament === 'function') {
       try {
+        console.log('💾 Saving tournament to database for multi-device sync...');
         await ApiService.createTournament(newTournament);
         console.log('✅ Tournament synced to database successfully:', newTournament.name);
+        
+        // Update local state AFTER successful database save
+        setTournaments(prev => {
+          const updatedTournaments = { ...prev, [tournamentId]: newTournament };
+          
+          // Also save to localStorage as cache
+          try {
+            localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+            console.log('✅ Tournament cached in localStorage');
+          } catch (localError) {
+            console.error('❌ Failed to cache tournament in localStorage:', localError);
+          }
+          
+          return updatedTournaments;
+        });
+        
       } catch (error) {
-        console.warn('⚠️ Failed to sync tournament to database (working offline):', error.message);
-        // Don't show error to user - the tournament was created locally
+        console.error('❌ Failed to save tournament to database:', error);
+        
+        // FALLBACK: Save locally only if database fails
+        console.log('📱 Saving tournament locally as fallback...');
+        setTournaments(prev => {
+          const updatedTournaments = { ...prev, [tournamentId]: newTournament };
+          
+          try {
+            localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+            console.log('✅ Tournament saved locally (FALLBACK)');
+          } catch (localError) {
+            console.error('❌ Failed to save tournament locally:', localError);
+          }
+          
+          return updatedTournaments;
+        });
+        
+        // Show warning to user that it's only saved locally
+        alert('⚠️ Torneo creato solo localmente. Altri dispositivi non lo vedranno fino alla riconnessione al server.');
       }
     } else {
-      console.log('⚠️ ApiService not available, tournament saved locally only');
+      console.log('⚠️ ApiService not available, saving locally only');
+      
+      // Save locally when ApiService is not available
+      setTournaments(prev => {
+        const updatedTournaments = { ...prev, [tournamentId]: newTournament };
+        
+        try {
+          localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+          console.log('✅ Tournament saved locally (ApiService unavailable)');
+        } catch (localError) {
+          console.error('❌ Failed to save tournament locally:', localError);
+        }
+        
+        return updatedTournaments;
+      });
+      
+      alert('⚠️ Torneo creato solo localmente. Configurare il database per la sincronizzazione multi-dispositivo.');
     }
 
     // Log action
