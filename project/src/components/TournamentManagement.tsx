@@ -147,291 +147,293 @@ export default function TournamentManagement({
     return sorted;
   };
 
-const registerTeam = async () => {
-  console.log('🔥 [FORCE DEBUG] STARTING TEAM REGISTRATION - NEW VERSION');
-  
-  if (!teamName.trim()) return;
-  
-  console.log('🔍 [TEAM DEBUG] Starting team registration process...');
-  console.log('🔍 [TEAM DEBUG] Tournament ID:', tournamentId);
-  console.log('🔍 [TEAM DEBUG] Tournament data:', tournament);
-  
-  // Check if team already exists in this slot
-  const existingTeam = Object.values(teams).find(t => 
-    t.tournamentId === tournamentId && 
-    t.lobbyNumber === selectedLobby && 
-    t.lobby === getTeamKey(selectedLobby, selectedSlot)
-  );
-  
-  if (existingTeam) {
-    if (!confirm(`Slot già occupato da "${existingTeam.name}". Vuoi sovrascrivere?`)) {
-      return;
-    }
+  const registerTeam = async () => {
+    console.log('🔥 [FORCE DEBUG] STARTING TEAM REGISTRATION - NEW VERSION');
     
-    // Remove existing team first
-    await removeTeam(existingTeam.id);
-  }
-  
-  const key = getTeamKey(selectedLobby, selectedSlot);
-  const code = generateUniqueTeamCode(teams);
-  
-  const newTeam: Team = {
-    id: key,
-    name: teamName.trim(),
-    code,
-    lobby: key,
-    lobbyNumber: tournament.type === 'Ritorno' ? selectedLobby : undefined,
-    createdAt: Date.now(),
-    tournamentId
-  };
-
-  console.log('🔍 [TEAM DEBUG] New team data:', newTeam);
-
-  // STEP 1: FORZA creazione torneo nel database
-  try {
-    console.log('🔥 [FORCE DEBUG] FORCING tournament creation in database...');
-    await ApiService.createTournament(tournament);
-    console.log('✅ [FORCE DEBUG] Tournament FORCED to database successfully');
-  } catch (tournamentCreationError: any) {
-    console.warn('⚠️ [FORCE DEBUG] Tournament creation failed (might already exist):', tournamentCreationError.message);
-  }
-
-  // STEP 2: FORZA registrazione team
-  try {
-    console.log('🔥 [FORCE DEBUG] FORCING team creation in database...');
-    console.log('📡 [FORCE DEBUG] Team payload:', JSON.stringify(newTeam, null, 2));
+    if (!teamName.trim()) return;
     
-    const teamResult = await ApiService.createTeam(newTeam);
-    console.log('✅ [FORCE DEBUG] Team FORCED to database successfully:', teamResult);
+    console.log('🔍 [TEAM DEBUG] Starting team registration process...');
+    console.log('🔍 [TEAM DEBUG] Tournament ID:', tournamentId);
+    console.log('🔍 [TEAM DEBUG] Tournament data:', tournament);
     
-    // Update local state on SUCCESS
-    setTeams(prev => ({ ...prev, [key]: newTeam }));
-    console.log('✅ [FORCE DEBUG] Team added to local state');
+    const key = getTeamKey(selectedLobby, selectedSlot);
     
-    // Update localStorage
-    const updatedTeams = { ...teams, [key]: newTeam };
-    localStorage.setItem('teams', JSON.stringify(updatedTeams));
-    console.log('✅ [FORCE DEBUG] Team saved to localStorage');
+    // Check if team already exists in this slot
+    const existingTeam = Object.values(teams).find(t => 
+      t.tournamentId === tournamentId && 
+      t.lobbyNumber === selectedLobby && 
+      t.lobby === key
+    );
     
-    alert('🎉 SUCCESSO! Squadra registrata e sincronizzata con il database!');
-    
-  } catch (teamCreationError: any) {
-    console.error('❌ [FORCE DEBUG] Team creation FAILED:', teamCreationError);
-    
-    // Fallback: save locally anyway
-    setTeams(prev => ({ ...prev, [key]: newTeam }));
-    const updatedTeams = { ...teams, [key]: newTeam };
-    localStorage.setItem('teams', JSON.stringify(updatedTeams));
-    
-    alert(`❌ Errore sincronizzazione database: ${teamCreationError.message}\n\n✅ Squadra salvata localmente e funziona normalmente.`);
-  }
-
-  // Reset form
-  setTeamName('');
-  
-  // Broadcast team creation for real-time updates
-  if ('BroadcastChannel' in window) {
-    try {
-      const channel = new BroadcastChannel('warzone-global-sync');
-      channel.postMessage({
-        type: 'team-created',
-        teamId: key,
-        team: newTeam,
-        timestamp: Date.now()
-      });
-      channel.close();
-      console.log('📡 [FORCE DEBUG] Team creation broadcasted successfully');
-    } catch (error) {
-      console.warn('📡 [FORCE DEBUG] Team broadcast failed:', error);
-    }
-  }
-  
-  // Show the generated code
-  setShowTeamCode({ name: teamName.trim(), code });
-
-  // Log action
-  logAction(
-    auditLogs,
-    setAuditLogs,
-    'TEAM_REGISTERED',
-    `Squadra registrata: ${teamName.trim()} (${code}) in ${key}`,
-    'admin',
-    'admin',
-    { teamCode: code, teamName: teamName.trim(), tournamentId, lobby: key }
-  );
-
-  console.log('🏁 [FORCE DEBUG] Team registration process completed');
-};
-
-const removeTeam = async (teamId: string) => {
-  const team = teams[teamId];
-  if (!team) return;
-
-  if (!confirm(`Sei sicuro di voler rimuovere la squadra ${team.name}?`)) return;
-
-  // Use sync wrapper for database + localStorage sync
-  const updatedTeams = { ...teams };
-  delete updatedTeams[teamId];
-
-  const syncResult = await ApiService.syncOperation({
-    localUpdate: () => {
-      // Update local state immediately
-      setTeams(prev => {
-        const newTeams = { ...prev };
-        delete newTeams[teamId];
-        return newTeams;
-      });
-
-      // Remove team matches
-      setMatches(prev => prev.filter(match => match.teamCode !== team.code));
-
-      // Remove team pending submissions
-      setPendingSubmissions(prev => prev.filter(sub => sub.teamCode !== team.code));
-
-      // Remove team adjustments
-      setScoreAdjustments(prev => prev.filter(adj => adj.teamCode !== team.code));
-    },
-    apiCall: async () => {
-      // Delete team from database
-      // Note: We should also delete related matches, submissions, and adjustments
-      // For now, we'll delete the team and let the server handle cleanup
-      if (typeof ApiService?.deleteTeam === 'function') {
-        await ApiService.deleteTeam(teamId);
-      } else {
-        // If deleteTeam doesn't exist, we'll skip database deletion
-        console.warn('⚠️ ApiService.deleteTeam not available, team removed locally only');
+    if (existingTeam) {
+      if (!confirm(`Slot già occupato da "${existingTeam.name}". Vuoi sovrascrivere?`)) {
+        return;
       }
-    },
-    storageKey: 'teams',
-    storageData: updatedTeams,
-    operationName: `Team Removal: ${team.name}`
-  });
-
-  // Handle sync result
-  if (syncResult.success) {
-    console.log('✅ Team removed and synced to database successfully');
-  } else {
-    console.warn('⚠️ Team removed locally, database sync failed:', syncResult.error);
-    // Note: We don't show alert here since removal should be seamless
-  }
-
-  // Log action
-  logAction(
-    auditLogs,
-    setAuditLogs,
-    'TEAM_REMOVED',
-    `Squadra rimossa: ${team.name} (${team.code})`,
-    'admin',
-    'admin',
-    { teamCode: team.code, teamName: team.name, tournamentId }
-  );
-};
-  const approveSubmission = async (submissionId: string) => {
-  const submission = pendingSubmissions.find(s => s.id === submissionId);
-  if (!submission) return;
-
-  const multiplier = multipliers[submission.position] || 1;
-  const score = submission.kills * multiplier;
-
-  const newMatch: Match = {
-    id: `${submission.teamCode}-${Date.now()}`,
-    position: submission.position,
-    kills: submission.kills,
-    score,
-    teamCode: submission.teamCode,
-    photos: submission.photos,
-    status: 'approved',
-    submittedAt: submission.submittedAt,
-    reviewedAt: Date.now(),
-    reviewedBy: 'admin',
-    tournamentId
-  };
-
-  // Use sync wrapper for match creation and submission removal
-  const syncResult = await ApiService.syncOperation({
-    localUpdate: () => {
-      // Update local state immediately for responsive UI
-      setMatches(prev => [...prev, newMatch]);
-      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
-    },
-    apiCall: async () => {
-      // Create match in database
-      await ApiService.createMatch(newMatch);
       
-      // Remove pending submission from database
-      if (typeof ApiService?.deletePendingSubmission === 'function') {
-        await ApiService.deletePendingSubmission(submissionId);
+      // ✅ FIXED: Remove existing team using the key from teams object
+      const teamKey = Object.keys(teams).find(k => teams[k] === existingTeam);
+      if (teamKey) {
+        await removeTeam(teamKey);
       }
-    },
-    storageKey: 'matches',
-    storageData: [...matches, newMatch],
-    operationName: `Score Approval: ${submission.teamName} - ${submission.position}° posto`
-  });
+    }
+    
+    const code = generateUniqueTeamCode(teams);
+    
+    // ✅ FIXED: Team object without 'id' field for MongoDB compatibility
+    const newTeam: Team = {
+      name: teamName.trim(),
+      code,
+      lobby: key,
+      lobbyNumber: tournament.type === 'Ritorno' ? selectedLobby : undefined,
+      createdAt: Date.now(),
+      tournamentId,
+      slotId: key  // Identificatore interno per lo slot
+    };
 
-  // Handle sync result
-  if (syncResult.success) {
-    console.log('✅ Score approved and synced to database successfully');
-  } else {
-    console.warn('⚠️ Score approved locally, database sync failed:', syncResult.error);
-  }
+    console.log('🔍 [TEAM DEBUG] New team data:', newTeam);
 
-  // Also update pending submissions in localStorage
-  const updatedPendingSubmissions = pendingSubmissions.filter(s => s.id !== submissionId);
-  localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPendingSubmissions));
+    // STEP 1: FORZA creazione torneo nel database
+    try {
+      console.log('🔥 [FORCE DEBUG] FORCING tournament creation in database...');
+      await ApiService.createTournament(tournament);
+      console.log('✅ [FORCE DEBUG] Tournament FORCED to database successfully');
+    } catch (tournamentCreationError: any) {
+      console.warn('⚠️ [FORCE DEBUG] Tournament creation failed (might already exist):', tournamentCreationError.message);
+    }
 
-  // Log action
-  logAction(
-    auditLogs,
-    setAuditLogs,
-    'SUBMISSION_APPROVED',
-    `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
-    'admin',
-    'admin',
-    { teamCode: submission.teamCode, submissionId, tournamentId }
-  );
-};
+    // STEP 2: FORZA registrazione team
+    try {
+      console.log('🔥 [FORCE DEBUG] FORCING team creation in database...');
+      console.log('📡 [FORCE DEBUG] Team payload:', JSON.stringify(newTeam, null, 2));
+      
+      const teamResult = await ApiService.createTeam(newTeam);
+      console.log('✅ [FORCE DEBUG] Team FORCED to database successfully:', teamResult);
+      
+      // Update local state on SUCCESS
+      setTeams(prev => ({ ...prev, [key]: newTeam }));
+      console.log('✅ [FORCE DEBUG] Team added to local state');
+      
+      // Update localStorage
+      const updatedTeams = { ...teams, [key]: newTeam };
+      localStorage.setItem('teams', JSON.stringify(updatedTeams));
+      console.log('✅ [FORCE DEBUG] Team saved to localStorage');
+      
+      alert('🎉 SUCCESSO! Squadra registrata e sincronizzata con il database!');
+      
+    } catch (teamCreationError: any) {
+      console.error('❌ [FORCE DEBUG] Team creation FAILED:', teamCreationError);
+      
+      // Fallback: save locally anyway
+      setTeams(prev => ({ ...prev, [key]: newTeam }));
+      const updatedTeams = { ...teams, [key]: newTeam };
+      localStorage.setItem('teams', JSON.stringify(updatedTeams));
+      
+      alert(`❌ Errore sincronizzazione database: ${teamCreationError.message}\n\n✅ Squadra salvata localmente e funziona normalmente.`);
+    }
 
-const rejectSubmission = async (submissionId: string) => {
-  const submission = pendingSubmissions.find(s => s.id === submissionId);
-  if (!submission) return;
-
-  // Use sync wrapper for submission removal
-  const syncResult = await ApiService.syncOperation({
-    localUpdate: () => {
-      // Update local state immediately for responsive UI
-      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
-    },
-    apiCall: async () => {
-      // Remove pending submission from database
-      if (typeof ApiService?.deletePendingSubmission === 'function') {
-        await ApiService.deletePendingSubmission(submissionId);
-      } else {
-        console.warn('⚠️ ApiService.deletePendingSubmission not available');
+    // Reset form
+    setTeamName('');
+    
+    // Broadcast team creation for real-time updates
+    if ('BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('warzone-global-sync');
+        channel.postMessage({
+          type: 'team-created',
+          teamId: key,
+          team: newTeam,
+          timestamp: Date.now()
+        });
+        channel.close();
+        console.log('📡 [FORCE DEBUG] Team creation broadcasted successfully');
+      } catch (error) {
+        console.warn('📡 [FORCE DEBUG] Team broadcast failed:', error);
       }
-    },
-    storageKey: 'pendingSubmissions',
-    storageData: pendingSubmissions.filter(s => s.id !== submissionId),
-    operationName: `Score Rejection: ${submission.teamName}`
-  });
+    }
+    
+    // Show the generated code
+    setShowTeamCode({ name: teamName.trim(), code });
 
-  // Handle sync result
-  if (syncResult.success) {
-    console.log('✅ Score rejected and synced to database successfully');
-  } else {
-    console.warn('⚠️ Score rejected locally, database sync failed:', syncResult.error);
-  }
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'TEAM_REGISTERED',
+      `Squadra registrata: ${teamName.trim()} (${code}) in ${key}`,
+      'admin',
+      'admin',
+      { teamCode: code, teamName: teamName.trim(), tournamentId, lobby: key }
+    );
 
-  // Log action
-  logAction(
-    auditLogs,
-    setAuditLogs,
-    'SUBMISSION_REJECTED',
-    `Sottomissione rifiutata per ${submission.teamName}`,
-    'admin',
-    'admin',
-    { teamCode: submission.teamCode, submissionId, tournamentId }
-  );
-};
+    console.log('🏁 [FORCE DEBUG] Team registration process completed');
+  };
+
+  const removeTeam = async (teamId: string) => {
+    const team = teams[teamId];
+    if (!team) return;
+
+    if (!confirm(`Sei sicuro di voler rimuovere la squadra ${team.name}?`)) return;
+
+    // Use sync wrapper for database + localStorage sync
+    const updatedTeams = { ...teams };
+    delete updatedTeams[teamId];
+
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        // Update local state immediately
+        setTeams(prev => {
+          const newTeams = { ...prev };
+          delete newTeams[teamId];
+          return newTeams;
+        });
+
+        // Remove team matches
+        setMatches(prev => prev.filter(match => match.teamCode !== team.code));
+
+        // Remove team pending submissions
+        setPendingSubmissions(prev => prev.filter(sub => sub.teamCode !== team.code));
+
+        // Remove team adjustments
+        setScoreAdjustments(prev => prev.filter(adj => adj.teamCode !== team.code));
+      },
+      apiCall: async () => {
+        // Delete team from database
+        if (typeof ApiService?.deleteTeam === 'function') {
+          await ApiService.deleteTeam(teamId);
+        } else {
+          console.warn('⚠️ ApiService.deleteTeam not available, team removed locally only');
+        }
+      },
+      storageKey: 'teams',
+      storageData: updatedTeams,
+      operationName: `Team Removal: ${team.name}`
+    });
+
+    // Handle sync result
+    if (syncResult.success) {
+      console.log('✅ Team removed and synced to database successfully');
+    } else {
+      console.warn('⚠️ Team removed locally, database sync failed:', syncResult.error);
+    }
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'TEAM_REMOVED',
+      `Squadra rimossa: ${team.name} (${team.code})`,
+      'admin',
+      'admin',
+      { teamCode: team.code, teamName: team.name, tournamentId }
+    );
+  };
+
+  const approveSubmission = async (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    const multiplier = multipliers[submission.position] || 1;
+    const score = submission.kills * multiplier;
+
+    const newMatch: Match = {
+      id: `${submission.teamCode}-${Date.now()}`,
+      position: submission.position,
+      kills: submission.kills,
+      score,
+      teamCode: submission.teamCode,
+      photos: submission.photos,
+      status: 'approved',
+      submittedAt: submission.submittedAt,
+      reviewedAt: Date.now(),
+      reviewedBy: 'admin',
+      tournamentId
+    };
+
+    // Use sync wrapper for match creation and submission removal
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        // Update local state immediately for responsive UI
+        setMatches(prev => [...prev, newMatch]);
+        setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+      },
+      apiCall: async () => {
+        // Create match in database
+        await ApiService.createMatch(newMatch);
+        
+        // Remove pending submission from database
+        if (typeof ApiService?.deletePendingSubmission === 'function') {
+          await ApiService.deletePendingSubmission(submissionId);
+        }
+      },
+      storageKey: 'matches',
+      storageData: [...matches, newMatch],
+      operationName: `Score Approval: ${submission.teamName} - ${submission.position}° posto`
+    });
+
+    // Handle sync result
+    if (syncResult.success) {
+      console.log('✅ Score approved and synced to database successfully');
+    } else {
+      console.warn('⚠️ Score approved locally, database sync failed:', syncResult.error);
+    }
+
+    // Also update pending submissions in localStorage
+    const updatedPendingSubmissions = pendingSubmissions.filter(s => s.id !== submissionId);
+    localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPendingSubmissions));
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_APPROVED',
+      `Sottomissione approvata per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId }
+    );
+  };
+
+  const rejectSubmission = async (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    // Use sync wrapper for submission removal
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        // Update local state immediately for responsive UI
+        setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+      },
+      apiCall: async () => {
+        // Remove pending submission from database
+        if (typeof ApiService?.deletePendingSubmission === 'function') {
+          await ApiService.deletePendingSubmission(submissionId);
+        } else {
+          console.warn('⚠️ ApiService.deletePendingSubmission not available');
+        }
+      },
+      storageKey: 'pendingSubmissions',
+      storageData: pendingSubmissions.filter(s => s.id !== submissionId),
+      operationName: `Score Rejection: ${submission.teamName}`
+    });
+
+    // Handle sync result
+    if (syncResult.success) {
+      console.log('✅ Score rejected and synced to database successfully');
+    } else {
+      console.warn('⚠️ Score rejected locally, database sync failed:', syncResult.error);
+    }
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SUBMISSION_REJECTED',
+      `Sottomissione rifiutata per ${submission.teamName}`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, submissionId, tournamentId }
+    );
+  };
 
   const handleManualSubmission = async (submission: Omit<PendingSubmission, 'id' | 'submittedAt'>) => {
     const newSubmission: PendingSubmission = {
@@ -454,45 +456,45 @@ const rejectSubmission = async (submissionId: string) => {
     );
   };
 
- const addScoreAdjustment = async (adjustmentData: Omit<ScoreAdjustment, 'id' | 'appliedAt' | 'appliedBy' | 'tournamentId'>) => {
-  const newAdjustment: ScoreAdjustment = {
-    ...adjustmentData,
-    id: `adj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    appliedAt: Date.now(),
-    appliedBy: 'admin',
-    tournamentId
+  const addScoreAdjustment = async (adjustmentData: Omit<ScoreAdjustment, 'id' | 'appliedAt' | 'appliedBy' | 'tournamentId'>) => {
+    const newAdjustment: ScoreAdjustment = {
+      ...adjustmentData,
+      id: `adj-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      appliedAt: Date.now(),
+      appliedBy: 'admin',
+      tournamentId
+    };
+
+    // Use sync wrapper for database + localStorage sync
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        // Update local state immediately for responsive UI
+        setScoreAdjustments(prev => [...prev, newAdjustment]);
+      },
+      apiCall: () => ApiService.createScoreAdjustment(newAdjustment),
+      storageKey: 'scoreAdjustments',
+      storageData: [...scoreAdjustments, newAdjustment],
+      operationName: `Score Adjustment: ${adjustmentData.type === 'penalty' ? 'Penalty' : 'Reward'} for ${adjustmentData.teamName}`
+    });
+
+    // Handle sync result
+    if (syncResult.success) {
+      console.log('✅ Score adjustment applied and synced to database successfully');
+    } else {
+      console.warn('⚠️ Score adjustment applied locally, database sync failed:', syncResult.error);
+    }
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'SCORE_ADJUSTMENT',
+      `${adjustmentData.type === 'penalty' ? 'Penalità' : 'Ricompensa'} applicata a ${adjustmentData.teamName}: ${adjustmentData.points > 0 ? '+' : ''}${adjustmentData.points} punti - ${adjustmentData.reason}`,
+      'admin',
+      'admin',
+      { teamCode: adjustmentData.teamCode, type: adjustmentData.type, points: adjustmentData.points, tournamentId }
+    );
   };
-
-  // Use sync wrapper for database + localStorage sync
-  const syncResult = await ApiService.syncOperation({
-    localUpdate: () => {
-      // Update local state immediately for responsive UI
-      setScoreAdjustments(prev => [...prev, newAdjustment]);
-    },
-    apiCall: () => ApiService.createScoreAdjustment(newAdjustment),
-    storageKey: 'scoreAdjustments',
-    storageData: [...scoreAdjustments, newAdjustment],
-    operationName: `Score Adjustment: ${adjustmentData.type === 'penalty' ? 'Penalty' : 'Reward'} for ${adjustmentData.teamName}`
-  });
-
-  // Handle sync result
-  if (syncResult.success) {
-    console.log('✅ Score adjustment applied and synced to database successfully');
-  } else {
-    console.warn('⚠️ Score adjustment applied locally, database sync failed:', syncResult.error);
-  }
-
-  // Log action
-  logAction(
-    auditLogs,
-    setAuditLogs,
-    'SCORE_ADJUSTMENT',
-    `${adjustmentData.type === 'penalty' ? 'Penalità' : 'Ricompensa'} applicata a ${adjustmentData.teamName}: ${adjustmentData.points > 0 ? '+' : ''}${adjustmentData.points} punti - ${adjustmentData.reason}`,
-    'admin',
-    'admin',
-    { teamCode: adjustmentData.teamCode, type: adjustmentData.type, points: adjustmentData.points, tournamentId }
-  );
-};
 
   const assignManager = (managerCode: string) => {
     const manager = managers[managerCode];
@@ -541,161 +543,160 @@ const rejectSubmission = async (submissionId: string) => {
   };
 
   const completeTournament = async () => {
-  if (!confirm(`⚠️ ATTENZIONE! Sei sicuro di voler TERMINARE DEFINITIVAMENTE il torneo "${tournament.name}"?\n\nQuesta azione:\n- Terminerà il torneo e lo rimuoverà dai tornei attivi\n- Eliminerà tutte le squadre e le loro sessioni di login\n- Salverà una copia nell'archivio solo per consultazione\n- I team non potranno più accedere o inviare punteggi\n\nQuesta azione NON PUÒ essere annullata!`)) return;
+    if (!confirm(`⚠️ ATTENZIONE! Sei sicuro di voler TERMINARE DEFINITIVAMENTE il torneo "${tournament.name}"?\n\nQuesta azione:\n- Terminerà il torneo e lo rimuoverà dai tornei attivi\n- Eliminerà tutte le squadre e le loro sessioni di login\n- Salverà una copia nell'archivio solo per consultazione\n- I team non potranno più accedere o inviare punteggi\n\nQuesta azione NON PUÒ essere annullata!`)) return;
 
-  try {
-    console.log('🏁 Terminando torneo completamente:', tournamentId);
-
-    // 1. Calcola la classifica finale prima di terminare
-    const finalLeaderboard = getLeaderboard();
-
-    // 2. Crea una copia archiviata del torneo con tutti i dati per consultazione
-    const archivedTournament = {
-      ...tournament,
-      status: 'archived',
-      endedAt: Date.now(),
-      completedAt: Date.now(),
-      finalLeaderboard,
-      // Salva snapshot dei dati al momento della terminazione
-      archivedData: {
-        teams: Object.values(teams).filter(team => team.tournamentId === tournamentId),
-        matches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved'),
-        adjustments: scoreAdjustments.filter(adj => adj.tournamentId === tournamentId),
-        totalTeams: Object.values(teams).filter(team => team.tournamentId === tournamentId).length,
-        totalMatches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved').length
-      }
-    };
-
-    // 3. Salva nell'archivio
-    setTournaments(prev => ({
-      ...prev,
-      [tournamentId]: archivedTournament
-    }));
-
-    // 4. ELIMINA COMPLETAMENTE tutti i dati operativi del torneo
-
-    // Elimina tutte le squadre del torneo (questo termina le loro sessioni)
-    const tournamentTeamIds = Object.values(teams)
-      .filter(team => team.tournamentId === tournamentId)
-      .map(team => team.id);
-
-    setTeams(prev => {
-      const newTeams = { ...prev };
-      tournamentTeamIds.forEach(teamId => {
-        delete newTeams[teamId];
-      });
-      return newTeams;
-    });
-
-    // Elimina tutte le partite operative
-    setMatches(prev => prev.filter(match => match.tournamentId !== tournamentId));
-
-    // Elimina tutte le submission pendenti
-    setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== tournamentId));
-
-    // Elimina tutti gli aggiustamenti operativi
-    setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== tournamentId));
-
-    // 5. Log dell'eliminazione completa
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'TOURNAMENT_TERMINATED',
-      `Torneo terminato definitivamente: ${tournament.name} - ${finalLeaderboard.length} squadre, ${matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length} partite. Salvato in archivio per consultazione.`,
-      'admin',
-      'admin',
-      { 
-        tournamentId, 
-        tournamentName: tournament.name,
-        finalTeams: finalLeaderboard.length,
-        finalMatches: matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length
-      }
-    );
-
-    // 6. Broadcast per terminare tutte le sessioni attive
-    if ('BroadcastChannel' in window) {
-      try {
-        const channel = new BroadcastChannel('warzone-global-sync');
-        channel.postMessage({
-          type: 'tournament-terminated',
-          tournamentId: tournamentId,
-          message: `Il torneo "${tournament.name}" è stato terminato. Tutte le sessioni sono state chiuse.`,
-          timestamp: Date.now()
-        });
-        channel.close();
-      } catch (error) {
-        console.warn('Tournament termination broadcast failed:', error);
-      }
-    }
-
-    // 7. Sincronizzazione con il database
     try {
-      if (typeof ApiService?.syncAllData === 'function') {
-        console.log('🔄 Sincronizzando terminazione torneo con database...');
-        
-        // Prepara tutti i dati aggiornati per la sincronizzazione
-        const updatedData = {
-          tournaments: {
+      console.log('🏁 Terminando torneo completamente:', tournamentId);
+
+      // 1. Calcola la classifica finale prima di terminare
+      const finalLeaderboard = getLeaderboard();
+
+      // 2. Crea una copia archiviata del torneo con tutti i dati per consultazione
+      const archivedTournament = {
+        ...tournament,
+        status: 'archived',
+        endedAt: Date.now(),
+        completedAt: Date.now(),
+        finalLeaderboard,
+        // Salva snapshot dei dati al momento della terminazione
+        archivedData: {
+          teams: Object.values(teams).filter(team => team.tournamentId === tournamentId),
+          matches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved'),
+          adjustments: scoreAdjustments.filter(adj => adj.tournamentId === tournamentId),
+          totalTeams: Object.values(teams).filter(team => team.tournamentId === tournamentId).length,
+          totalMatches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved').length
+        }
+      };
+
+      // 3. Salva nell'archivio
+      setTournaments(prev => ({
+        ...prev,
+        [tournamentId]: archivedTournament
+      }));
+
+      // 4. ELIMINA COMPLETAMENTE tutti i dati operativi del torneo
+
+      // ✅ FIXED: Elimina tutte le squadre del torneo usando le chiavi
+      const tournamentTeamIds = Object.keys(teams)
+        .filter(teamKey => teams[teamKey].tournamentId === tournamentId);
+
+      setTeams(prev => {
+        const newTeams = { ...prev };
+        tournamentTeamIds.forEach(teamId => {
+          delete newTeams[teamId];
+        });
+        return newTeams;
+      });
+
+      // Elimina tutte le partite operative
+      setMatches(prev => prev.filter(match => match.tournamentId !== tournamentId));
+
+      // Elimina tutte le submission pendenti
+      setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== tournamentId));
+
+      // Elimina tutti gli aggiustamenti operativi
+      setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== tournamentId));
+
+      // 5. Log dell'eliminazione completa
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'TOURNAMENT_TERMINATED',
+        `Torneo terminato definitivamente: ${tournament.name} - ${finalLeaderboard.length} squadre, ${matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length} partite. Salvato in archivio per consultazione.`,
+        'admin',
+        'admin',
+        { 
+          tournamentId, 
+          tournamentName: tournament.name,
+          finalTeams: finalLeaderboard.length,
+          finalMatches: matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length
+        }
+      );
+
+      // 6. Broadcast per terminare tutte le sessioni attive
+      if ('BroadcastChannel' in window) {
+        try {
+          const channel = new BroadcastChannel('warzone-global-sync');
+          channel.postMessage({
+            type: 'tournament-terminated',
+            tournamentId: tournamentId,
+            message: `Il torneo "${tournament.name}" è stato terminato. Tutte le sessioni sono state chiuse.`,
+            timestamp: Date.now()
+          });
+          channel.close();
+        } catch (error) {
+          console.warn('Tournament termination broadcast failed:', error);
+        }
+      }
+
+      // 7. Sincronizzazione con il database
+      try {
+        if (typeof ApiService?.syncAllData === 'function') {
+          console.log('🔄 Sincronizzando terminazione torneo con database...');
+          
+          // Prepara tutti i dati aggiornati per la sincronizzazione
+          const updatedData = {
+            tournaments: {
+              ...tournaments,
+              [tournamentId]: archivedTournament
+            },
+            teams: (() => {
+              const newTeams = { ...teams };
+              tournamentTeamIds.forEach(teamId => {
+                delete newTeams[teamId];
+              });
+              return newTeams;
+            })(),
+            matches: matches.filter(match => match.tournamentId !== tournamentId),
+            pendingSubmissions: pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId),
+            scoreAdjustments: scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId),
+            managers: managers,
+            auditLogs: auditLogs
+          };
+          
+          // Sincronizza con il database
+          await ApiService.syncAllData(updatedData);
+          console.log('✅ Terminazione torneo sincronizzata con database');
+          
+          // Salva anche nel localStorage come backup
+          localStorage.setItem('tournaments', JSON.stringify(updatedData.tournaments));
+          localStorage.setItem('teams', JSON.stringify(updatedData.teams));
+          localStorage.setItem('matches', JSON.stringify(updatedData.matches));
+          localStorage.setItem('pendingSubmissions', JSON.stringify(updatedData.pendingSubmissions));
+          localStorage.setItem('scoreAdjustments', JSON.stringify(updatedData.scoreAdjustments));
+          
+        } else {
+          console.warn('⚠️ ApiService non disponibile, salvando solo localStorage');
+          
+          // Solo localStorage se il database non è disponibile
+          localStorage.setItem('tournaments', JSON.stringify({
             ...tournaments,
             [tournamentId]: archivedTournament
-          },
-          teams: (() => {
-            const newTeams = { ...teams };
-            tournamentTeamIds.forEach(teamId => {
-              delete newTeams[teamId];
-            });
-            return newTeams;
-          })(),
-          matches: matches.filter(match => match.tournamentId !== tournamentId),
-          pendingSubmissions: pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId),
-          scoreAdjustments: scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId),
-          managers: managers,
-          auditLogs: auditLogs
-        };
-        
-        // Sincronizza con il database
-        await ApiService.syncAllData(updatedData);
-        console.log('✅ Terminazione torneo sincronizzata con database');
-        
-        // Salva anche nel localStorage come backup
-        localStorage.setItem('tournaments', JSON.stringify(updatedData.tournaments));
-        localStorage.setItem('teams', JSON.stringify(updatedData.teams));
-        localStorage.setItem('matches', JSON.stringify(updatedData.matches));
-        localStorage.setItem('pendingSubmissions', JSON.stringify(updatedData.pendingSubmissions));
-        localStorage.setItem('scoreAdjustments', JSON.stringify(updatedData.scoreAdjustments));
-        
-      } else {
-        console.warn('⚠️ ApiService non disponibile, salvando solo localStorage');
-        
-        // Solo localStorage se il database non è disponibile
-        localStorage.setItem('tournaments', JSON.stringify({
-          ...tournaments,
-          [tournamentId]: archivedTournament
-        }));
-        
-        const newTeams = { ...teams };
-        tournamentTeamIds.forEach(teamId => delete newTeams[teamId]);
-        localStorage.setItem('teams', JSON.stringify(newTeams));
-        localStorage.setItem('matches', JSON.stringify(matches.filter(match => match.tournamentId !== tournamentId)));
-        localStorage.setItem('pendingSubmissions', JSON.stringify(pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId)));
-        localStorage.setItem('scoreAdjustments', JSON.stringify(scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId)));
+          }));
+          
+          const newTeams = { ...teams };
+          tournamentTeamIds.forEach(teamId => delete newTeams[teamId]);
+          localStorage.setItem('teams', JSON.stringify(newTeams));
+          localStorage.setItem('matches', JSON.stringify(matches.filter(match => match.tournamentId !== tournamentId)));
+          localStorage.setItem('pendingSubmissions', JSON.stringify(pendingSubmissions.filter(sub => sub.tournamentId !== tournamentId)));
+          localStorage.setItem('scoreAdjustments', JSON.stringify(scoreAdjustments.filter(adj => adj.tournamentId !== tournamentId)));
+        }
+      } catch (syncError) {
+        console.error('❌ Errore durante la sincronizzazione:', syncError);
+        alert('⚠️ Torneo terminato localmente, ma errore nella sincronizzazione con il database. Verifica la connessione.');
       }
-    } catch (syncError) {
-      console.error('❌ Errore durante la sincronizzazione:', syncError);
-      alert('⚠️ Torneo terminato localmente, ma errore nella sincronizzazione con il database. Verifica la connessione.');
+
+      console.log('✅ Torneo terminato completamente e archiviato');
+      alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
+
+      // 8. Chiudi il modal SOLO DOPO la sincronizzazione
+      onClose();
+
+    } catch (error) {
+      console.error('❌ Errore durante la terminazione:', error);
+      alert('❌ Errore durante la terminazione del torneo');
     }
-
-     console.log('✅ Torneo terminato completamente e archiviato');
-    alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
-
-    // 8. Chiudi il modal SOLO DOPO la sincronizzazione
-    onClose();
-
-  } catch (error) {
-    console.error('❌ Errore durante la terminazione:', error);
-    alert('❌ Errore durante la terminazione del torneo');
-  }
-};
+  };
 
   const exportCSV = () => {
     const leaderboard = getLeaderboard();
@@ -882,23 +883,28 @@ const rejectSubmission = async (submissionId: string) => {
                   SQUADRE REGISTRATE ({tournamentTeams.length})
                 </h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {tournamentTeams.map((team) => (
-                    <div key={team.id} className="p-3 bg-black/20 border border-ice-blue/20 rounded-lg animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-ice-blue font-mono text-sm">{team.lobby}</div>
-                          <div className="text-white font-bold">{team.name}</div>
-                          <div className="text-ice-blue/60 font-mono text-xs">Team ID: ********</div>
+                  {tournamentTeams.map((team) => {
+                    // ✅ FIXED: Trova la chiave del team nell'oggetto teams
+                    const teamKey = Object.keys(teams).find(key => teams[key] === team);
+                    
+                    return (
+                      <div key={team.slotId || team.lobby} className="p-3 bg-black/20 border border-ice-blue/20 rounded-lg animate-fade-in">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-ice-blue font-mono text-sm">{team.lobby}</div>
+                            <div className="text-white font-bold">{team.name}</div>
+                            <div className="text-ice-blue/60 font-mono text-xs">Team ID: ********</div>
+                          </div>
+                          <button
+                            onClick={() => teamKey && removeTeam(teamKey)}
+                            className="p-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
-                        <button
-                          onClick={() => removeTeam(team.id)}
-                          className="p-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
