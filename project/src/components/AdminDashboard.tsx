@@ -1240,6 +1240,33 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 sm:space-x-4">
               <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="sm:hidden p-2 text-ice-blue hover:bg-ice-blue/10 rounded-lg transition-colors"
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-ice-blue/20 to-ice-blue-dark/20 relative">
+                <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-ice-blue animate-float" />
+                <div className="absolute inset-0 rounded-full bg-ice-blue/10 animate-ping" />
+              </div>
+              <div>
+                <h1 className="text-lg sm:text-3xl font-bold text-white font-mono tracking-wider animate-glow">
+                  ADMIN CONTROL
+                </h1>
+                <p className="text-ice-blue/80 font-mono text-xs sm:text-base">
+                  Sistema di Gestione Tornei Multi-Dispositivo
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <button
+                onClick={() => setShowLoginCodes(true)}
+                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
+              >
+                <Key className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">CODICI</span>
+              </button>
+              <button
                 onClick={() => setShowOBSPlugin(true)}
                 className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs sm:text-sm"
               >
@@ -1728,37 +1755,3 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     </div>
   );
 }
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="sm:hidden p-2 text-ice-blue hover:bg-ice-blue/10 rounded-lg transition-colors"
-              >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-              <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-ice-blue/20 to-ice-blue-dark/20 relative">
-                <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-ice-blue animate-float" />
-                <div className="absolute inset-0 rounded-full bg-ice-blue/10 animate-ping" />
-              </div>
-              <div>
-                <h1 className="text-lg sm:text-3xl font-bold text-white font-mono tracking-wider animate-glow">
-                  ADMIN CONTROL
-                </h1>
-                <p className="text-ice-blue/80 font-mono text-xs sm:text-base">
-                  Sistema di Gestione Tornei Multi-Dispositivo
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <button
-                onClick={() => setShowLoginCodes(true)}
-                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
-              >
-                <Key className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">CODICI</span>
-              </button>
-              <button
-                onClick={() => setShowOBSPlugin(true)}
-                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs sm:text-sm"
-              >
-                <Tv className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">OBS</span>
-              </button>
-              <button
