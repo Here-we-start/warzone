@@ -47,112 +47,355 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // Load tournaments with priority sync strategy
+  // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO
   useEffect(() => {
-    const loadTournamentsWithSync = async () => {
+    const loadAllDataWithMultiDeviceSync = async () => {
       try {
-        console.log('📡 Loading tournaments with sync priority...');
+        console.log('🔄 [MULTI-DEVICE] Starting complete data synchronization...');
+        setIsInitialLoading(true);
         
-        // Check if ApiService exists and has the method
+        // Check if ApiService exists
         if (typeof ApiService?.getAllTournaments === 'function') {
           try {
-            // TRY DATABASE FIRST - for multi-device sync
-            const tournamentsFromDB = await ApiService.getAllTournaments();
+            console.log('📡 [MULTI-DEVICE] Loading ALL data from database for multi-device sync...');
             
-            if (tournamentsFromDB && Object.keys(tournamentsFromDB).length > 0) {
+            // LOAD ALL DATA FROM DATABASE SIMULTANEOUSLY
+            const [
+              dbTournaments,
+              dbTeams,
+              dbMatches,
+              dbPendingSubmissions,
+              dbScoreAdjustments,
+              dbManagers,
+              dbAuditLogs
+            ] = await Promise.allSettled([
+              ApiService.getAllTournaments?.() || Promise.resolve({}),
+              ApiService.getAllTeams?.() || Promise.resolve({}),
+              ApiService.getAllMatches?.() || Promise.resolve([]),
+              ApiService.getAllPendingSubmissions?.() || Promise.resolve([]),
+              ApiService.getAllScoreAdjustments?.() || Promise.resolve([]),
+              ApiService.getAllManagers?.() || Promise.resolve({}),
+              ApiService.getAllAuditLogs?.() || Promise.resolve([])
+            ]);
+
+            console.log('📊 [MULTI-DEVICE] Database responses received, processing...');
+
+            // Process each result with detailed logging
+            const processResult = (result: PromiseSettledResult<any>, name: string, isArray: boolean = false) => {
+              if (result.status === 'fulfilled' && result.value) {
+                const count = isArray ? result.value.length : Object.keys(result.value).length;
+                console.log(`✅ [MULTI-DEVICE] ${name} loaded from database:`, count, 'items');
+                return result.value;
+              } else {
+                console.warn(`⚠️ [MULTI-DEVICE] ${name} failed:`, result.status === 'rejected' ? result.reason?.message : 'No data');
+                return isArray ? [] : {};
+              }
+            };
+
+            // Extract and process all data
+            const tournamentsFromDB = processResult(dbTournaments, 'Tournaments');
+            const teamsFromDB = processResult(dbTeams, 'Teams');
+            const matchesFromDB = processResult(dbMatches, 'Matches', true);
+            const pendingFromDB = processResult(dbPendingSubmissions, 'Pending Submissions', true);
+            const adjustmentsFromDB = processResult(dbScoreAdjustments, 'Score Adjustments', true);
+            const managersFromDB = processResult(dbManagers, 'Managers');
+            const auditLogsFromDB = processResult(dbAuditLogs, 'Audit Logs', true);
+
+            // Check if we have any valid data from database
+            const hasValidData = (
+              Object.keys(tournamentsFromDB).length > 0 ||
+              Object.keys(teamsFromDB).length > 0 ||
+              matchesFromDB.length > 0 ||
+              pendingFromDB.length > 0 ||
+              adjustmentsFromDB.length > 0 ||
+              Object.keys(managersFromDB).length > 0 ||
+              auditLogsFromDB.length > 0
+            );
+
+            if (hasValidData) {
+              console.log('✅ [MULTI-DEVICE] Database contains data - updating all application states');
+              
+              // Update ALL states with database data (PRIORITY)
               setTournaments(tournamentsFromDB);
+              setTeams(teamsFromDB);
+              setMatches(matchesFromDB);
+              setPendingSubmissions(pendingFromDB);
+              setScoreAdjustments(adjustmentsFromDB);
+              setManagers(managersFromDB);
+              setAuditLogs(auditLogsFromDB);
+
+              // Update localStorage with fresh database data for offline access
               localStorage.setItem('tournaments', JSON.stringify(tournamentsFromDB));
-              console.log('✅ Tournaments loaded from database (PRIORITY):', Object.keys(tournamentsFromDB).length);
-              return; // SUCCESS - stop here
+              localStorage.setItem('teams', JSON.stringify(teamsFromDB));
+              localStorage.setItem('matches', JSON.stringify(matchesFromDB));
+              localStorage.setItem('pendingSubmissions', JSON.stringify(pendingFromDB));
+              localStorage.setItem('scoreAdjustments', JSON.stringify(adjustmentsFromDB));
+              localStorage.setItem('managers', JSON.stringify(managersFromDB));
+              localStorage.setItem('auditLogs', JSON.stringify(auditLogsFromDB));
+
+              console.log('✅ [MULTI-DEVICE] Complete multi-device sync successful!');
+              console.log('📊 [MULTI-DEVICE] Final data summary:', {
+                tournaments: Object.keys(tournamentsFromDB).length,
+                teams: Object.keys(teamsFromDB).length,
+                matches: matchesFromDB.length,
+                pendingSubmissions: pendingFromDB.length,
+                scoreAdjustments: adjustmentsFromDB.length,
+                managers: Object.keys(managersFromDB).length,
+                auditLogs: auditLogsFromDB.length
+              });
+              
+              setIsInitialLoading(false);
+              return; // SUCCESS - database data loaded
             } else {
-              console.log('📭 No tournaments found in database, checking localStorage...');
+              console.log('📭 [MULTI-DEVICE] Database is empty, checking localStorage fallback...');
             }
-          } catch (dbError) {
-            console.warn('⚠️ Database unavailable, falling back to localStorage:', dbError.message);
+          } catch (dbError: any) {
+            console.warn('⚠️ [MULTI-DEVICE] Database connection failed, using localStorage fallback:', dbError.message);
           }
         } else {
-          console.log('⚠️ ApiService not available, checking localStorage...');
+          console.log('⚠️ [MULTI-DEVICE] ApiService not available, using localStorage fallback');
         }
 
-        // FALLBACK to localStorage only if database completely fails
+        // FALLBACK: Load from localStorage if database fails or is empty
+        console.log('📂 [MULTI-DEVICE] Loading from localStorage fallback...');
+        
         const localTournaments = localStorage.getItem('tournaments');
+        const localTeams = localStorage.getItem('teams');
+        const localMatches = localStorage.getItem('matches');
+        const localPendingSubmissions = localStorage.getItem('pendingSubmissions');
+        const localScoreAdjustments = localStorage.getItem('scoreAdjustments');
+        const localManagers = localStorage.getItem('managers');
+        const localAuditLogs = localStorage.getItem('auditLogs');
+
+        let hasLocalData = false;
+
+        // Load each data type from localStorage
         if (localTournaments) {
-          const parsed = JSON.parse(localTournaments);
-          setTournaments(parsed);
-          console.log('📂 Loaded tournaments from localStorage (FALLBACK)');
+          try {
+            const parsed = JSON.parse(localTournaments);
+            setTournaments(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Tournaments loaded from localStorage:', Object.keys(parsed).length);
+          } catch (e) { console.warn('⚠️ Failed to parse tournaments from localStorage'); }
+        }
+
+        if (localTeams) {
+          try {
+            const parsed = JSON.parse(localTeams);
+            setTeams(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Teams loaded from localStorage:', Object.keys(parsed).length);
+          } catch (e) { console.warn('⚠️ Failed to parse teams from localStorage'); }
+        }
+
+        if (localMatches) {
+          try {
+            const parsed = JSON.parse(localMatches);
+            setMatches(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Matches loaded from localStorage:', parsed.length);
+          } catch (e) { console.warn('⚠️ Failed to parse matches from localStorage'); }
+        }
+
+        if (localPendingSubmissions) {
+          try {
+            const parsed = JSON.parse(localPendingSubmissions);
+            setPendingSubmissions(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Pending submissions loaded from localStorage:', parsed.length);
+          } catch (e) { console.warn('⚠️ Failed to parse pending submissions from localStorage'); }
+        }
+
+        if (localScoreAdjustments) {
+          try {
+            const parsed = JSON.parse(localScoreAdjustments);
+            setScoreAdjustments(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Score adjustments loaded from localStorage:', parsed.length);
+          } catch (e) { console.warn('⚠️ Failed to parse score adjustments from localStorage'); }
+        }
+
+        if (localManagers) {
+          try {
+            const parsed = JSON.parse(localManagers);
+            setManagers(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Managers loaded from localStorage:', Object.keys(parsed).length);
+          } catch (e) { console.warn('⚠️ Failed to parse managers from localStorage'); }
+        }
+
+        if (localAuditLogs) {
+          try {
+            const parsed = JSON.parse(localAuditLogs);
+            setAuditLogs(parsed);
+            hasLocalData = true;
+            console.log('📂 [MULTI-DEVICE] Audit logs loaded from localStorage:', parsed.length);
+          } catch (e) { console.warn('⚠️ Failed to parse audit logs from localStorage'); }
+        }
+
+        if (hasLocalData) {
+          console.log('✅ [MULTI-DEVICE] Fallback data loaded from localStorage');
           
-          // Try to sync localStorage data to database in background
+          // Try to sync localStorage data to database in background (for offline-first scenarios)
           if (typeof ApiService?.syncAllData === 'function') {
-            console.log('🔄 Attempting to sync local data to database...');
+            console.log('🔄 [MULTI-DEVICE] Attempting background sync of local data to database...');
             setTimeout(async () => {
               try {
-                await ApiService.syncAllData({
-                  tournaments: parsed,
-                  teams: {},
-                  matches: [],
-                  pendingSubmissions: [],
-                  scoreAdjustments: [],
-                  managers: {},
-                  auditLogs: []
-                });
-                console.log('✅ Local data synced to database');
-              } catch (syncError) {
-                console.warn('⚠️ Failed to sync local data to database:', syncError.message);
+                const allLocalData = {
+                  tournaments: localTournaments ? JSON.parse(localTournaments) : {},
+                  teams: localTeams ? JSON.parse(localTeams) : {},
+                  matches: localMatches ? JSON.parse(localMatches) : [],
+                  pendingSubmissions: localPendingSubmissions ? JSON.parse(localPendingSubmissions) : [],
+                  scoreAdjustments: localScoreAdjustments ? JSON.parse(localScoreAdjustments) : [],
+                  managers: localManagers ? JSON.parse(localManagers) : {},
+                  auditLogs: localAuditLogs ? JSON.parse(localAuditLogs) : []
+                };
+                
+                await ApiService.syncAllData(allLocalData);
+                console.log('✅ [MULTI-DEVICE] Background sync to database completed');
+              } catch (syncError: any) {
+                console.warn('⚠️ [MULTI-DEVICE] Background sync failed:', syncError.message);
               }
-            }, 2000);
+            }, 3000); // Wait 3 seconds before attempting background sync
           }
         } else {
-          console.log('📭 No tournaments found anywhere - fresh start');
+          console.log('📭 [MULTI-DEVICE] No data found - fresh installation');
         }
         
-      } catch (error) {
-        console.error('❌ Critical error loading tournaments:', error);
+        setIsInitialLoading(false);
+        
+      } catch (error: any) {
+        console.error('❌ [MULTI-DEVICE] Critical error during data loading:', error);
+        setIsInitialLoading(false);
       }
     };
 
-    loadTournamentsWithSync();
+    loadAllDataWithMultiDeviceSync();
   }, []); // Run once on component mount
 
-  // Add periodic sync for multi-device synchronization
+  // ✅ SINCRONIZZAZIONE PERIODICA MIGLIORATA PER TUTTI I DATI
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
 
     if (typeof ApiService?.getAllTournaments === 'function') {
-      console.log('🔄 Setting up periodic sync for multi-device support...');
+      console.log('🔄 [MULTI-DEVICE] Setting up periodic sync for real-time multi-device updates...');
       
       syncInterval = setInterval(async () => {
         try {
-          console.log('🔄 Periodic sync check...');
-          const tournamentsFromDB = await ApiService.getAllTournaments();
+          console.log('🔄 [MULTI-DEVICE] Periodic sync check...');
           
-          if (tournamentsFromDB) {
-            const currentTournaments = JSON.stringify(tournaments);
-            const newTournaments = JSON.stringify(tournamentsFromDB);
+          // Check for updates in all data types
+          const [newTournaments, newTeams, newMatches, newPending, newAdjustments, newManagers] = await Promise.allSettled([
+            ApiService.getAllTournaments?.() || Promise.resolve({}),
+            ApiService.getAllTeams?.() || Promise.resolve({}),
+            ApiService.getAllMatches?.() || Promise.resolve([]),
+            ApiService.getAllPendingSubmissions?.() || Promise.resolve([]),
+            ApiService.getAllScoreAdjustments?.() || Promise.resolve([]),
+            ApiService.getAllManagers?.() || Promise.resolve({})
+          ]);
+
+          let hasChanges = false;
+
+          // Check tournaments for changes
+          if (newTournaments.status === 'fulfilled' && newTournaments.value) {
+            const currentTournamentsStr = JSON.stringify(tournaments);
+            const newTournamentsStr = JSON.stringify(newTournaments.value);
             
-            // Only update if there are actual changes
-            if (currentTournaments !== newTournaments) {
-              console.log('🔄 Changes detected - updating tournaments...');
-              setTournaments(tournamentsFromDB);
-              localStorage.setItem('tournaments', newTournaments);
-              console.log('✅ Tournaments synchronized with database');
+            if (currentTournamentsStr !== newTournamentsStr) {
+              console.log('🔄 [MULTI-DEVICE] Tournament changes detected');
+              setTournaments(newTournaments.value);
+              localStorage.setItem('tournaments', newTournamentsStr);
+              hasChanges = true;
             }
           }
-        } catch (error) {
-          console.log('⚠️ Periodic sync failed (probably offline):', error.message);
+
+          // Check teams for changes
+          if (newTeams.status === 'fulfilled' && newTeams.value) {
+            const currentTeamsStr = JSON.stringify(teams);
+            const newTeamsStr = JSON.stringify(newTeams.value);
+            
+            if (currentTeamsStr !== newTeamsStr) {
+              console.log('🔄 [MULTI-DEVICE] Team changes detected');
+              setTeams(newTeams.value);
+              localStorage.setItem('teams', newTeamsStr);
+              hasChanges = true;
+            }
+          }
+
+          // Check matches for changes
+          if (newMatches.status === 'fulfilled' && newMatches.value) {
+            const currentMatchesStr = JSON.stringify(matches);
+            const newMatchesStr = JSON.stringify(newMatches.value);
+            
+            if (currentMatchesStr !== newMatchesStr) {
+              console.log('🔄 [MULTI-DEVICE] Match changes detected');
+              setMatches(newMatches.value);
+              localStorage.setItem('matches', newMatchesStr);
+              hasChanges = true;
+            }
+          }
+
+          // Check pending submissions for changes
+          if (newPending.status === 'fulfilled' && newPending.value) {
+            const currentPendingStr = JSON.stringify(pendingSubmissions);
+            const newPendingStr = JSON.stringify(newPending.value);
+            
+            if (currentPendingStr !== newPendingStr) {
+              console.log('🔄 [MULTI-DEVICE] Pending submission changes detected');
+              setPendingSubmissions(newPending.value);
+              localStorage.setItem('pendingSubmissions', newPendingStr);
+              hasChanges = true;
+            }
+          }
+
+          // Check score adjustments for changes
+          if (newAdjustments.status === 'fulfilled' && newAdjustments.value) {
+            const currentAdjustmentsStr = JSON.stringify(scoreAdjustments);
+            const newAdjustmentsStr = JSON.stringify(newAdjustments.value);
+            
+            if (currentAdjustmentsStr !== newAdjustmentsStr) {
+              console.log('🔄 [MULTI-DEVICE] Score adjustment changes detected');
+              setScoreAdjustments(newAdjustments.value);
+              localStorage.setItem('scoreAdjustments', newAdjustmentsStr);
+              hasChanges = true;
+            }
+          }
+
+          // Check managers for changes
+          if (newManagers.status === 'fulfilled' && newManagers.value) {
+            const currentManagersStr = JSON.stringify(managers);
+            const newManagersStr = JSON.stringify(newManagers.value);
+            
+            if (currentManagersStr !== newManagersStr) {
+              console.log('🔄 [MULTI-DEVICE] Manager changes detected');
+              setManagers(newManagers.value);
+              localStorage.setItem('managers', newManagersStr);
+              hasChanges = true;
+            }
+          }
+
+          if (hasChanges) {
+            console.log('✅ [MULTI-DEVICE] Data synchronized across devices');
+          }
+          
+        } catch (error: any) {
+          console.log('⚠️ [MULTI-DEVICE] Periodic sync failed (probably offline):', error.message);
         }
-      }, 30000); // Sync every 30 seconds
+      }, 15000); // Sync every 15 seconds for better real-time experience
     }
 
     return () => {
       if (syncInterval) {
         clearInterval(syncInterval);
-        console.log('🔄 Periodic sync stopped');
+        console.log('🔄 [MULTI-DEVICE] Periodic sync stopped');
       }
     };
-  }, [tournaments]); // Re-run when tournaments change
+  }, [tournaments, teams, matches, pendingSubmissions, scoreAdjustments, managers]); // Re-run when any data changes
 
-  const approveSubmission = (submissionId: string) => {
+  // ✅ APPROVE SUBMISSION WITH MULTI-DEVICE SYNC
+  const approveSubmission = async (submissionId: string) => {
     const submission = pendingSubmissions.find(s => s.id === submissionId);
     if (!submission) return;
 
@@ -173,8 +416,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       tournamentId: submission.tournamentId
     };
 
-    setMatches(prev => [...prev, newMatch]);
-    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    console.log('🔄 [MULTI-DEVICE] Approving submission with database sync...');
+
+    try {
+      // Update database first
+      if (typeof ApiService?.createMatch === 'function') {
+        await ApiService.createMatch(newMatch);
+        console.log('✅ [MULTI-DEVICE] Match created in database');
+      }
+
+      if (typeof ApiService?.deletePendingSubmission === 'function') {
+        await ApiService.deletePendingSubmission(submissionId);
+        console.log('✅ [MULTI-DEVICE] Pending submission removed from database');
+      }
+
+      // Update local state
+      setMatches(prev => [...prev, newMatch]);
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+      // Update localStorage
+      const updatedMatches = [...matches, newMatch];
+      const updatedPending = pendingSubmissions.filter(s => s.id !== submissionId);
+      localStorage.setItem('matches', JSON.stringify(updatedMatches));
+      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
+
+      console.log('✅ [MULTI-DEVICE] Submission approval synced across all devices');
+
+    } catch (error: any) {
+      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setMatches(prev => [...prev, newMatch]);
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    }
 
     // Log action
     logAction(
@@ -188,11 +462,35 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     );
   };
 
-  const rejectSubmission = (submissionId: string) => {
-    const submission = pendingSubmissions.find(s => s.id !== submissionId);
+  // ✅ REJECT SUBMISSION WITH MULTI-DEVICE SYNC
+  const rejectSubmission = async (submissionId: string) => {
+    const submission = pendingSubmissions.find(s => s.id === submissionId);
     if (!submission) return;
 
-    setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    console.log('🔄 [MULTI-DEVICE] Rejecting submission with database sync...');
+
+    try {
+      // Update database first
+      if (typeof ApiService?.deletePendingSubmission === 'function') {
+        await ApiService.deletePendingSubmission(submissionId);
+        console.log('✅ [MULTI-DEVICE] Pending submission rejected in database');
+      }
+
+      // Update local state
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+
+      // Update localStorage
+      const updatedPending = pendingSubmissions.filter(s => s.id !== submissionId);
+      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
+
+      console.log('✅ [MULTI-DEVICE] Submission rejection synced across all devices');
+
+    } catch (error: any) {
+      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setPendingSubmissions(prev => prev.filter(s => s.id !== submissionId));
+    }
 
     // Log action
     logAction(
@@ -596,7 +894,30 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       submittedAt: Date.now()
     };
 
-    setPendingSubmissions(prev => [...prev, newSubmission]);
+    console.log('🔄 [MULTI-DEVICE] Adding manual submission with database sync...');
+
+    try {
+      // Update database first
+      if (typeof ApiService?.createPendingSubmission === 'function') {
+        await ApiService.createPendingSubmission(newSubmission);
+        console.log('✅ [MULTI-DEVICE] Manual submission added to database');
+      }
+
+      // Update local state
+      setPendingSubmissions(prev => [...prev, newSubmission]);
+
+      // Update localStorage
+      const updatedPending = [...pendingSubmissions, newSubmission];
+      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
+
+      console.log('✅ [MULTI-DEVICE] Manual submission synced across all devices');
+
+    } catch (error: any) {
+      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setPendingSubmissions(prev => [...prev, newSubmission]);
+    }
 
     // Log action
     logAction(
@@ -639,6 +960,28 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { id: 'archive', label: 'ARCHIVIO', icon: Archive }
   ];
 
+  // ✅ LOADING SCREEN DURANTE SINCRONIZZAZIONE INIZIALE
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen p-2 sm:p-4 relative z-10 flex items-center justify-center">
+        <GlassPanel className="p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-ice-blue/20 to-ice-blue-dark/20 relative mb-6">
+            <Shield className="w-8 h-8 text-ice-blue animate-spin" />
+            <div className="absolute inset-0 rounded-full bg-ice-blue/10 animate-ping" />
+          </div>
+          <h2 className="text-2xl font-bold text-white font-mono mb-4">ADMIN CONTROL</h2>
+          <div className="space-y-2">
+            <div className="w-64 h-2 bg-black/30 rounded-full mx-auto overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-ice-blue to-ice-blue-dark rounded-full animate-pulse" style={{ width: '70%' }}></div>
+            </div>
+            <p className="text-ice-blue font-mono text-sm">Sincronizzazione multi-dispositivo in corso...</p>
+            <p className="text-ice-blue/60 font-mono text-xs">Caricamento dati da database e localStorage</p>
+          </div>
+        </GlassPanel>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen p-2 sm:p-4 relative z-10">
       <div className="max-w-7xl mx-auto">
@@ -661,7 +1004,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   ADMIN CONTROL
                 </h1>
                 <p className="text-ice-blue/80 font-mono text-xs sm:text-base">
-                  Sistema di Gestione Tornei
+                  Sistema di Gestione Tornei Multi-Dispositivo
                 </p>
               </div>
             </div>
@@ -982,7 +1325,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             © 2025 BM Solution - Sviluppo Applicazioni
           </div>
           <div className="text-xs text-ice-blue/30 font-mono mt-1">
-            Advanced Tournament Management System v4.0
+            Advanced Tournament Management System v4.0 - Multi-Device Sync
           </div>
         </div>
       </div>
