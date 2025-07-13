@@ -219,8 +219,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const teamsWithPendingCount = Object.keys(pendingByTeam).length;
 
   const activeTournaments = Object.values(tournaments).filter(t => t.status === 'active');
-  const completedTournaments = Object.values(tournaments).filter(t => t.status === 'completed');
-
+  const archivedTournaments = Object.values(tournaments).filter(t => t.status === 'archived');
+  
   // Get pending submissions count
   const totalPendingCount = pendingSubmissions.length;
 
@@ -969,7 +969,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         {/* Tournament Archive Tab */}
         {activeTab === 'archive' && (
           <TournamentArchive
-            tournaments={completedTournaments}
+            tournaments={archivedTournaments}
             setTournaments={setTournaments}
             auditLogs={auditLogs}
             setAuditLogs={setAuditLogs}
