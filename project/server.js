@@ -1,4 +1,4 @@
-// PRODUCTION-READY WARZONE TOURNAMENT SERVER
+// PRODUCTION-READY WARZONE TOURNAMENT SERVER - VERSIONE CORRETTA
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -223,10 +223,9 @@ const connectToMongoDB = async () => {
     
     await mongoose.connect(MONGODB_URI, {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 10000, // Reduced timeout
+      serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
-      connectTimeoutMS: 10000, // Reduced timeout
-      
+      connectTimeoutMS: 10000,
     });
     
     console.log('✅ MongoDB connected successfully!');
@@ -239,16 +238,11 @@ const connectToMongoDB = async () => {
     console.error('❌ MongoDB connection failed:', error.message);
     logger.error('MongoDB connection error', { error: error.message, stack: error.stack });
     
-    // Don't exit in development - allow server to start for testing
     if (process.env.NODE_ENV === 'production') {
       console.error('💥 Exiting due to MongoDB connection failure in production');
       process.exit(1);
     } else {
       console.warn('⚠️  Continuing without MongoDB in development mode');
-      console.warn('📝 To fix this:');
-      console.warn('   1. Set up MongoDB Atlas: npm run setup:atlas');
-      console.warn('   2. Or install local MongoDB');
-      console.warn('   3. Update MONGODB_URI in .env file');
     }
   }
 };
@@ -281,7 +275,7 @@ const findTournamentById = async (id) => {
   }
 };
 
-// Input validation schemas - UPDATE to be more flexible with tournament IDs
+// Input validation schemas
 const tournamentValidation = [
   body('name').trim().isLength({ min: 1, max: 100 }).escape(),
   body('type').isIn(['Ritorno', 'BR']),
@@ -292,7 +286,6 @@ const tournamentValidation = [
   body('settings.countedMatches').isInt({ min: 1, max: 20 })
 ];
 
-// UPDATED: More flexible team validation - tournamentId can be string or ObjectId
 const teamValidation = [
   body('name').trim().isLength({ min: 1, max: 50 }).escape(),
   body('tournamentId').isLength({ min: 1 }).withMessage('Tournament ID is required'),
@@ -300,7 +293,6 @@ const teamValidation = [
   body('clanName').optional().trim().isLength({ max: 50 }).escape()
 ];
 
-// UPDATED: More flexible match validation
 const matchValidation = [
   body('position').isInt({ min: 1, max: 100 }),
   body('kills').isInt({ min: 0, max: 100 }),
@@ -327,7 +319,7 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// Tournament Schema with enhanced validation
+// Database Schemas
 const tournamentSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 100 },
   type: { type: String, enum: ['Ritorno', 'BR'], default: 'Ritorno' },
@@ -349,25 +341,25 @@ const tournamentSchema = new mongoose.Schema({
   isDemo: { type: Boolean, default: false }
 });
 
-// Team Schema with enhanced validation
 const teamSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 50 },
   code: { type: String, required: true, unique: true, maxlength: 20 },
   lobby: String,
   lobbyNumber: Number,
+  slotId: String,
+  slotNumber: Number,
   createdAt: { type: Number, default: Date.now },
   tournamentId: { type: String, required: true },
   playerName: { type: String, maxlength: 50 },
   clanName: { type: String, maxlength: 50 }
 });
 
-// Match Schema with enhanced validation
 const matchSchema = new mongoose.Schema({
   position: { type: Number, required: true, min: 1, max: 100 },
   kills: { type: Number, required: true, min: 0, max: 100 },
   score: { type: Number, required: true, min: 0 },
   teamCode: { type: String, required: true, maxlength: 20 },
-  photos: { type: [String], validate: [arrayLimit, '{PATH} exceeds the limit of 5'] },
+  photos: { type: [String], validate: [val => val.length <= 5, 'Photos exceed limit of 5'] },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
   submittedAt: { type: Number, default: Date.now },
   reviewedAt: Number,
@@ -376,22 +368,16 @@ const matchSchema = new mongoose.Schema({
   rejectionReason: String
 });
 
-function arrayLimit(val) {
-  return val.length <= 5;
-}
-
-// Pending Submission Schema
 const pendingSubmissionSchema = new mongoose.Schema({
   teamCode: { type: String, required: true, maxlength: 20 },
   teamName: { type: String, required: true, maxlength: 50 },
   position: { type: Number, required: true, min: 1, max: 100 },
   kills: { type: Number, required: true, min: 0, max: 100 },
-  photos: { type: [String], validate: [arrayLimit, '{PATH} exceeds the limit of 5'] },
+  photos: { type: [String], validate: [val => val.length <= 5, 'Photos exceed limit of 5'] },
   submittedAt: { type: Number, default: Date.now },
   tournamentId: { type: String, required: true }
 });
 
-// Score Adjustment Schema
 const scoreAdjustmentSchema = new mongoose.Schema({
   teamCode: { type: String, required: true, maxlength: 20 },
   teamName: { type: String, required: true, maxlength: 50 },
@@ -403,7 +389,6 @@ const scoreAdjustmentSchema = new mongoose.Schema({
   tournamentId: { type: String, required: true }
 });
 
-// Manager Schema
 const managerSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 50 },
   code: { type: String, required: true, unique: true, maxlength: 20 },
@@ -413,7 +398,6 @@ const managerSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true }
 });
 
-// Audit Log Schema
 const auditLogSchema = new mongoose.Schema({
   action: { type: String, required: true, maxlength: 100 },
   details: { type: String, required: true, maxlength: 500 },
@@ -440,7 +424,7 @@ teamSchema.index({ tournamentId: 1, code: 1 });
 matchSchema.index({ tournamentId: 1, teamCode: 1 });
 auditLogSchema.index({ timestamp: -1, tournamentId: 1 });
 
-// Socket.io connection handling with enhanced security
+// Socket.io connection handling
 io.on('connection', (socket) => {
   logger.info('User connected', { socketId: socket.id, ip: socket.handshake.address });
   
@@ -477,12 +461,13 @@ io.on('connection', (socket) => {
   });
 });
 
-// API Routes with enhanced error handling
+// =====================================
+// API ROUTES - TOURNAMENTS
+// =====================================
 
-// FIXED: Get all tournaments with proper ID mapping
+// Get all tournaments
 app.get('/api/tournaments', async (req, res) => {
   try {
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       logger.warn('MongoDB not connected, returning empty tournaments list', { ip: req.ip });
       return res.json({ 
@@ -497,7 +482,6 @@ app.get('/api/tournaments', async (req, res) => {
       .limit(50)
       .lean();
     
-    // FIXED: Ensure all tournaments have the id field mapped from _id
     const formattedTournaments = tournaments.map(tournament => ({
       ...tournament,
       id: tournament._id.toString()
@@ -512,12 +496,11 @@ app.get('/api/tournaments', async (req, res) => {
   } catch (error) {
     logger.error('Get tournaments error', { error: error.message, ip: req.ip });
     
-    // Provide more specific error handling
     if (error.message.includes('buffering timed out')) {
       return res.status(503).json({ 
         success: false,
         error: 'Database connection timeout. Please check MongoDB configuration.',
-        details: 'MongoDB connection is not established. Run "npm run setup:atlas" to configure.'
+        details: 'MongoDB connection is not established.'
       });
     }
     
@@ -528,22 +511,15 @@ app.get('/api/tournaments', async (req, res) => {
   }
 });
 
-// FIXED: Get tournament by ID - supports both formats
+// Get tournament by ID
 app.get('/api/tournaments/:id', async (req, res) => {
   try {
-    let tournament;
-    
-    if (isValidObjectId(req.params.id)) {
-      tournament = await Tournament.findById(req.params.id).lean();
-    } else {
-      tournament = await Tournament.findOne({ id: req.params.id }).lean();
-    }
+    const tournament = await findTournamentById(req.params.id);
     
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
-    // Add id field for frontend compatibility
     const responseData = {
       ...tournament,
       id: tournament._id.toString()
@@ -556,90 +532,54 @@ app.get('/api/tournaments/:id', async (req, res) => {
   }
 });
 
-// ALREADY FIXED: Create tournament with validation
+// Create tournament
 app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async (req, res) => {
   try {
-    console.log('📝 ===== TOURNAMENT CREATION DEBUG =====');
+    console.log('📝 Creating tournament...');
     console.log('📄 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('🔗 MongoDB connection state:', mongoose.connection.readyState);
     
-    // Remove custom ID and let MongoDB generate _id automatically
     const { id, ...tournamentData } = req.body;
-    console.log('🔄 Removed custom ID, using MongoDB auto-generated _id');
-    console.log('📄 Clean tournament data:', JSON.stringify(tournamentData, null, 2));
     
-    console.log('🏗️ Creating Tournament object...');
     const tournament = new Tournament(tournamentData);
-    console.log('🏗️ Tournament object created successfully');
-    
-    console.log('💾 Attempting to save tournament to MongoDB...');
     await tournament.save();
-    console.log('✅ Tournament saved successfully! MongoDB _id:', tournament._id);
     
-    // Create response data with frontend-compatible format
     const responseData = {
       ...tournament.toObject(),
-      id: tournament._id.toString() // Frontend expects 'id' field
+      id: tournament._id.toString()
     };
-    
-    console.log('📤 Response data prepared:', JSON.stringify(responseData, null, 2));
     
     logger.info('Tournament created', { 
       tournamentId: tournament._id, 
       name: tournament.name,
-      createdBy: tournamentData.createdBy || 'admin',
       ip: req.ip 
     });
     
-    // Emit to all connected clients
     io.emit('tournamentCreated', { tournament: responseData });
     
     res.json({ success: true, tournament: responseData });
   } catch (error) {
-    console.error('❌ ===== DETAILED ERROR ANALYSIS =====');
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error name:', error.name);
-    console.error('❌ Error stack:', error.stack);
-    
-    if (error.name === 'ValidationError') {
-      console.error('❌ Validation errors:');
-      Object.keys(error.errors || {}).forEach(key => {
-        console.error(`❌   Field: ${key}, Message: ${error.errors[key].message}`);
-      });
-    }
-    
+    console.error('❌ Tournament creation error:', error.message);
     logger.error('Create tournament error', { error: error.message, ip: req.ip });
     res.status(500).json({ 
       success: false, 
       error: 'Failed to create tournament',
-      details: error.message,
-      errorType: error.name
+      details: error.message
     });
   }
 });
 
-// ALREADY FIXED: Update tournament
+// Update tournament
 app.put('/api/tournaments/:id', tournamentValidation, handleValidationErrors, async (req, res) => {
   try {
-    console.log('📝 ===== TOURNAMENT UPDATE DEBUG =====');
-    console.log('📄 Tournament ID from URL:', req.params.id);
-    console.log('📄 Update data:', JSON.stringify(req.body, null, 2));
-    
-    // Try to find tournament by MongoDB _id first, then fallback to custom id field
     let tournament;
     
-    // Check if the ID looks like a MongoDB ObjectId (24 hex characters)
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
-    
-    if (isMongoId) {
-      console.log('🔍 Searching by MongoDB _id:', req.params.id);
+    if (isValidObjectId(req.params.id)) {
       tournament = await Tournament.findByIdAndUpdate(
         req.params.id, 
         req.body, 
         { new: true, runValidators: true }
       );
     } else {
-      console.log('🔍 Searching by custom id field:', req.params.id);
       tournament = await Tournament.findOneAndUpdate(
         { id: req.params.id }, 
         req.body, 
@@ -648,83 +588,47 @@ app.put('/api/tournaments/:id', tournamentValidation, handleValidationErrors, as
     }
     
     if (!tournament) {
-      console.log('❌ Tournament not found with ID:', req.params.id);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
-    
-    console.log('✅ Tournament updated successfully!');
-    console.log('📊 Updated tournament data:', JSON.stringify(tournament.toObject(), null, 2));
     
     logger.info('Tournament updated', { 
       tournamentId: tournament._id, 
       name: tournament.name,
-      status: req.body.status || tournament.status,
-      updatedFields: Object.keys(req.body),
       ip: req.ip 
     });
     
-    // Create response data with frontend-compatible format
     const responseData = {
       ...tournament.toObject(),
-      id: tournament._id.toString() // Ensure frontend gets the id field
+      id: tournament._id.toString()
     };
     
-    console.log('📤 Response data prepared for frontend');
-    
-    // Emit tournament update to all clients
     io.emit('tournamentUpdated', { tournament: responseData });
     
     res.json({ success: true, tournament: responseData });
   } catch (error) {
-    console.error('❌ ===== TOURNAMENT UPDATE ERROR =====');
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error name:', error.name);
-    console.error('❌ Error stack:', error.stack);
-    
-    if (error.name === 'ValidationError') {
-      console.error('❌ Validation errors:');
-      Object.keys(error.errors || {}).forEach(key => {
-        console.error(`❌   Field: ${key}, Message: ${error.errors[key].message}`);
-      });
-    }
-    
     logger.error('Update tournament error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
     res.status(500).json({ 
       success: false, 
       error: 'Failed to update tournament',
-      details: error.message,
-      errorType: error.name
+      details: error.message
     });
   }
 });
 
-// ALREADY FIXED: Delete tournament
+// Delete tournament
 app.delete('/api/tournaments/:id', async (req, res) => {
   try {
-    console.log('📝 ===== TOURNAMENT DELETE DEBUG =====');
-    console.log('📄 Tournament ID from URL:', req.params.id);
-    
-    // Try to find tournament by MongoDB _id first, then fallback to custom id field
     let tournament;
     
-    // Check if the ID looks like a MongoDB ObjectId (24 hex characters)
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
-    
-    if (isMongoId) {
-      console.log('🔍 Deleting by MongoDB _id:', req.params.id);
+    if (isValidObjectId(req.params.id)) {
       tournament = await Tournament.findByIdAndDelete(req.params.id);
     } else {
-      console.log('🔍 Deleting by custom id field:', req.params.id);
       tournament = await Tournament.findOneAndDelete({ id: req.params.id });
     }
     
     if (!tournament) {
-      console.log('❌ Tournament not found with ID:', req.params.id);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
-    
-    console.log('✅ Tournament deleted successfully!');
-    console.log('📊 Deleted tournament:', tournament.name);
     
     logger.info('Tournament deleted', { 
       tournamentId: tournament._id, 
@@ -732,18 +636,13 @@ app.delete('/api/tournaments/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit tournament deletion to all clients
     io.emit('tournamentDeleted', { 
-      tournamentId: tournament._id.toString(), // Use actual MongoDB _id
+      tournamentId: tournament._id.toString(),
       tournamentName: tournament.name
     });
     
     res.json({ success: true, message: 'Tournament deleted successfully' });
   } catch (error) {
-    console.error('❌ ===== TOURNAMENT DELETE ERROR =====');
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
-    
     logger.error('Delete tournament error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
     res.status(500).json({ 
       success: false, 
@@ -753,33 +652,110 @@ app.delete('/api/tournaments/:id', async (req, res) => {
   }
 });
 
-// FIXED: Get teams for tournament
-app.get('/api/tournaments/:id/teams', async (req, res) => {
+// =====================================
+// API ROUTES - TEAMS
+// =====================================
+
+// Get all teams
+app.get('/api/teams', async (req, res) => {
   try {
-    console.log('📝 ===== GET TEAMS DEBUG =====');
-    console.log('📄 Tournament ID from URL:', req.params.id);
+    console.log('📡 [API] GET /api/teams - Fetching all teams...');
     
-    // First, find the actual tournament to get its real _id
-    let tournament;
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
-    
-    if (isMongoId) {
-      console.log('🔍 Searching tournament by MongoDB _id:', req.params.id);
-      tournament = await Tournament.findById(req.params.id).lean();
-    } else {
-      console.log('🔍 Searching tournament by custom id field:', req.params.id);
-      tournament = await Tournament.findOne({ id: req.params.id }).lean();
+    if (mongoose.connection.readyState !== 1) {
+      logger.warn('MongoDB not connected, returning empty teams list', { ip: req.ip });
+      return res.json({ 
+        success: true,
+        teams: {},
+        warning: 'Database not connected. Please check MongoDB configuration.'
+      });
     }
     
+    const teams = await Team.find({}).lean();
+    console.log(`✅ [API] Found ${teams.length} teams in database`);
+    
+    // Convert array to object format expected by frontend
+    const teamsObject = teams.reduce((acc, team) => {
+      const key = team.slotId || 
+                  team.lobby || 
+                  team._id.toString() || 
+                  `${team.tournamentId}-Lobby${team.lobbyNumber || 1}-Slot${team.slotNumber || 1}`;
+      
+      acc[key] = {
+        ...team,
+        id: team._id.toString(),
+        slotId: team.slotId || key,
+        lobby: team.lobby || key
+      };
+      return acc;
+    }, {});
+    
+    logger.info('Teams fetched', { count: teams.length, ip: req.ip });
+    
+    res.json({ 
+      success: true,
+      teams: teamsObject 
+    });
+  } catch (error) {
+    console.error('❌ [API] Error fetching teams:', error);
+    logger.error('Get all teams error', { error: error.message, ip: req.ip });
+    
+    if (error.message.includes('buffering timed out')) {
+      return res.status(503).json({ 
+        success: false,
+        error: 'Database connection timeout. Please check MongoDB configuration.'
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch teams',
+      details: error.message
+    });
+  }
+});
+
+// Get team by ID
+app.get('/api/teams/:id', async (req, res) => {
+  try {
+    console.log('📡 [API] GET /api/teams/' + req.params.id);
+    
+    const team = await Team.findById(req.params.id).lean();
+    
+    if (!team) {
+      return res.status(404).json({ success: false, error: 'Team not found' });
+    }
+    
+    const responseData = {
+      ...team,
+      id: team._id.toString()
+    };
+    
+    logger.info('Team fetched', { teamId: req.params.id, name: team.name, ip: req.ip });
+    
+    res.json({ success: true, team: responseData });
+  } catch (error) {
+    console.error('❌ [API] Error fetching team:', error);
+    logger.error('Get team error', { error: error.message, teamId: req.params.id, ip: req.ip });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch team',
+      details: error.message
+    });
+  }
+});
+
+// Get teams for tournament
+app.get('/api/tournaments/:id/teams', async (req, res) => {
+  try {
+    console.log('📡 [API] GET /api/tournaments/' + req.params.id + '/teams');
+    
+    const tournament = await findTournamentById(req.params.id);
     if (!tournament) {
-      console.log('❌ Tournament not found with ID:', req.params.id);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
     const actualTournamentId = tournament._id.toString();
-    console.log('✅ Found tournament, actual _id:', actualTournamentId);
     
-    // Find teams using both possible tournamentId formats
     const teams = await Team.find({
       $or: [
         { tournamentId: actualTournamentId },
@@ -787,13 +763,12 @@ app.get('/api/tournaments/:id/teams', async (req, res) => {
       ]
     }).lean();
     
-    // Format teams with id field for frontend compatibility
     const formattedTeams = teams.map(team => ({
       ...team,
       id: team._id.toString()
     }));
     
-    console.log('✅ Found teams:', formattedTeams.length);
+    console.log(`✅ Found ${formattedTeams.length} teams for tournament`);
     
     res.json({ success: true, teams: formattedTeams });
   } catch (error) {
@@ -803,44 +778,30 @@ app.get('/api/tournaments/:id/teams', async (req, res) => {
   }
 });
 
-// FIXED: Create team with validation
+// Create team
 app.post('/api/teams', teamValidation, handleValidationErrors, async (req, res) => {
   try {
-    console.log('📝 ===== TEAM CREATION DEBUG =====');
+    console.log('📝 Creating team...');
     console.log('📄 Request body:', JSON.stringify(req.body, null, 2));
     
-    // Verify tournament exists and get its real _id
-    let tournament;
-    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.body.tournamentId);
-    
-    if (isMongoId) {
-      console.log('🔍 Verifying tournament by MongoDB _id:', req.body.tournamentId);
-      tournament = await Tournament.findById(req.body.tournamentId).lean();
-    } else {
-      console.log('🔍 Verifying tournament by custom id field:', req.body.tournamentId);
-      tournament = await Tournament.findOne({ id: req.body.tournamentId }).lean();
-    }
-    
+    // Verify tournament exists
+    const tournament = await findTournamentById(req.body.tournamentId);
     if (!tournament) {
-      console.log('❌ Tournament not found with ID:', req.body.tournamentId);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
     const actualTournamentId = tournament._id.toString();
-    console.log('✅ Tournament verified, actual _id:', actualTournamentId);
     
-    // Create team with the actual tournament _id
+    // Create team with enhanced data
     const teamData = {
       ...req.body,
-      tournamentId: actualTournamentId // Use the real MongoDB _id
+      tournamentId: actualTournamentId,
+      slotId: req.body.slotId || `${actualTournamentId}-Lobby${req.body.lobbyNumber || 1}-Slot${req.body.slotNumber || 1}`,
+      lobby: req.body.lobby || req.body.slotId || `${actualTournamentId}-Lobby${req.body.lobbyNumber || 1}-Slot${req.body.slotNumber || 1}`
     };
-    
-    console.log('🏗️ Creating team with data:', JSON.stringify(teamData, null, 2));
     
     const team = new Team(teamData);
     await team.save();
-    
-    console.log('✅ Team created successfully:', team._id);
     
     logger.info('Team created', { 
       teamId: team._id, 
@@ -850,21 +811,27 @@ app.post('/api/teams', teamValidation, handleValidationErrors, async (req, res) 
       ip: req.ip 
     });
     
-    // Format team data for frontend
     const responseTeamData = {
       ...team.toObject(),
-      id: team._id.toString()
+      id: team._id.toString(),
+      slotId: team.slotId || team._id.toString(),
+      lobby: team.lobby || team.slotId || team._id.toString()
     };
     
-    // Emit to tournament room and all clients
     io.to(`tournament-${actualTournamentId}`).emit('teamCreated', { team: responseTeamData });
     io.emit('teamCreated', { team: responseTeamData });
     
     res.json({ success: true, team: responseTeamData });
   } catch (error) {
-    console.error('❌ ===== TEAM CREATION ERROR =====');
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Team creation error:', error.message);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Team code already exists',
+        details: 'This team code is already in use'
+      });
+    }
     
     logger.error('Create team error', { error: error.message, ip: req.ip });
     res.status(500).json({ 
@@ -875,16 +842,14 @@ app.post('/api/teams', teamValidation, handleValidationErrors, async (req, res) 
   }
 });
 
-// FIXED: Update team
+// Update team
 app.put('/api/teams/:id', teamValidation, handleValidationErrors, async (req, res) => {
   try {
-    // If tournamentId is being updated, verify the new tournament exists
     if (req.body.tournamentId) {
       const tournament = await findTournamentById(req.body.tournamentId);
       if (!tournament) {
         return res.status(404).json({ success: false, error: 'Tournament not found' });
       }
-      // Use the actual tournament _id
       req.body.tournamentId = tournament._id.toString();
     }
     
@@ -905,7 +870,6 @@ app.put('/api/teams/:id', teamValidation, handleValidationErrors, async (req, re
       ip: req.ip 
     });
     
-    // Emit team update
     const teamData = {
       ...team.toObject(),
       id: team._id.toString()
@@ -920,7 +884,7 @@ app.put('/api/teams/:id', teamValidation, handleValidationErrors, async (req, re
   }
 });
 
-// FIXED: Delete team
+// Delete team
 app.delete('/api/teams/:id', async (req, res) => {
   try {
     const team = await Team.findByIdAndDelete(req.params.id);
@@ -936,7 +900,6 @@ app.delete('/api/teams/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit team deletion
     io.to(`tournament-${team.tournamentId}`).emit('teamDeleted', { 
       teamId: req.params.id,
       teamCode: team.code,
@@ -955,10 +918,75 @@ app.delete('/api/teams/:id', async (req, res) => {
   }
 });
 
-// FIXED: Get matches for tournament
+// Bulk create teams
+app.post('/api/teams/bulk', async (req, res) => {
+  try {
+    const { teams } = req.body;
+    
+    if (!Array.isArray(teams)) {
+      return res.status(400).json({ success: false, error: 'Teams must be an array' });
+    }
+    
+    const results = [];
+    const errors = [];
+    
+    for (const teamData of teams) {
+      try {
+        const tournament = await findTournamentById(teamData.tournamentId);
+        if (!tournament) {
+          errors.push({ teamData, error: 'Tournament not found' });
+          continue;
+        }
+        
+        const enhancedTeamData = {
+          ...teamData,
+          tournamentId: tournament._id.toString(),
+          slotId: teamData.slotId || `${tournament._id}-Lobby${teamData.lobbyNumber || 1}-Slot${teamData.slotNumber || 1}`,
+          lobby: teamData.lobby || teamData.slotId
+        };
+        
+        const team = new Team(enhancedTeamData);
+        await team.save();
+        
+        results.push({
+          ...team.toObject(),
+          id: team._id.toString()
+        });
+      } catch (error) {
+        errors.push({ teamData, error: error.message });
+      }
+    }
+    
+    logger.info('Bulk team creation', { 
+      successful: results.length, 
+      failed: errors.length,
+      ip: req.ip 
+    });
+    
+    if (results.length > 0) {
+      io.emit('bulkTeamsCreated', { teams: results });
+    }
+    
+    res.json({ 
+      success: errors.length === 0, 
+      created: results.length,
+      failed: errors.length,
+      teams: results,
+      errors: errors
+    });
+  } catch (error) {
+    logger.error('Bulk team creation error', { error: error.message, ip: req.ip });
+    res.status(500).json({ success: false, error: 'Failed to create teams in bulk' });
+  }
+});
+
+// =====================================
+// API ROUTES - MATCHES
+// =====================================
+
+// Get matches for tournament
 app.get('/api/tournaments/:id/matches', async (req, res) => {
   try {
-    // Find the tournament first to get the real _id
     const tournament = await findTournamentById(req.params.id);
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
@@ -966,7 +994,6 @@ app.get('/api/tournaments/:id/matches', async (req, res) => {
     
     const actualTournamentId = tournament._id.toString();
     
-    // Find matches using both possible tournamentId formats
     const matches = await Match.find({
       $or: [
         { tournamentId: actualTournamentId },
@@ -974,7 +1001,6 @@ app.get('/api/tournaments/:id/matches', async (req, res) => {
       ]
     }).lean();
     
-    // Format matches with id field for frontend compatibility
     const formattedMatches = matches.map(match => ({
       ...match,
       id: match._id.toString()
@@ -987,16 +1013,14 @@ app.get('/api/tournaments/:id/matches', async (req, res) => {
   }
 });
 
-// FIXED: Create match with validation
+// Create match
 app.post('/api/matches', matchValidation, handleValidationErrors, async (req, res) => {
   try {
-    // Verify tournament exists and get its real _id
     const tournament = await findTournamentById(req.body.tournamentId);
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
-    // Create match with the actual tournament _id
     const matchData = {
       ...req.body,
       tournamentId: tournament._id.toString()
@@ -1014,7 +1038,6 @@ app.post('/api/matches', matchValidation, handleValidationErrors, async (req, re
       ip: req.ip 
     });
     
-    // Emit match creation
     const matchResponseData = {
       ...match.toObject(),
       id: match._id.toString()
@@ -1029,16 +1052,14 @@ app.post('/api/matches', matchValidation, handleValidationErrors, async (req, re
   }
 });
 
-// FIXED: Update match
+// Update match
 app.put('/api/matches/:id', matchValidation, handleValidationErrors, async (req, res) => {
   try {
-    // If tournamentId is being updated, verify the new tournament exists
     if (req.body.tournamentId) {
       const tournament = await findTournamentById(req.body.tournamentId);
       if (!tournament) {
         return res.status(404).json({ success: false, error: 'Tournament not found' });
       }
-      // Use the actual tournament _id
       req.body.tournamentId = tournament._id.toString();
     }
     
@@ -1059,7 +1080,6 @@ app.put('/api/matches/:id', matchValidation, handleValidationErrors, async (req,
       ip: req.ip 
     });
     
-    // Emit match update
     const matchData = {
       ...match.toObject(),
       id: match._id.toString()
@@ -1074,7 +1094,7 @@ app.put('/api/matches/:id', matchValidation, handleValidationErrors, async (req,
   }
 });
 
-// FIXED: Delete match
+// Delete match
 app.delete('/api/matches/:id', async (req, res) => {
   try {
     const match = await Match.findByIdAndDelete(req.params.id);
@@ -1089,7 +1109,6 @@ app.delete('/api/matches/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit match deletion
     io.to(`tournament-${match.tournamentId}`).emit('matchDeleted', { 
       matchId: req.params.id,
       teamCode: match.teamCode,
@@ -1108,14 +1127,17 @@ app.delete('/api/matches/:id', async (req, res) => {
   }
 });
 
-// FIXED: Pending Submissions endpoints
+// =====================================
+// API ROUTES - OTHER ENTITIES
+// =====================================
+
+// Pending Submissions endpoints
 app.get('/api/pending-submissions', async (req, res) => {
   try {
     const { tournamentId } = req.query;
     let filter = {};
     
     if (tournamentId) {
-      // Support both tournament ID formats
       const tournament = await findTournamentById(tournamentId);
       if (tournament) {
         filter = { 
@@ -1131,7 +1153,6 @@ app.get('/api/pending-submissions', async (req, res) => {
     
     const submissions = await PendingSubmission.find(filter).lean();
     
-    // Format submissions with id field
     const formattedSubmissions = submissions.map(submission => ({
       ...submission,
       id: submission._id.toString()
@@ -1146,7 +1167,6 @@ app.get('/api/pending-submissions', async (req, res) => {
 
 app.post('/api/pending-submissions', async (req, res) => {
   try {
-    // Verify tournament exists and use real _id
     const tournament = await findTournamentById(req.body.tournamentId);
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
@@ -1167,7 +1187,6 @@ app.post('/api/pending-submissions', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit pending submission creation
     const submissionResponseData = {
       ...submission.toObject(),
       id: submission._id.toString()
@@ -1196,7 +1215,6 @@ app.delete('/api/pending-submissions/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit pending submission deletion
     io.to(`tournament-${submission.tournamentId}`).emit('pendingSubmissionDeleted', { 
       submissionId: req.params.id,
       teamCode: submission.teamCode,
@@ -1215,14 +1233,13 @@ app.delete('/api/pending-submissions/:id', async (req, res) => {
   }
 });
 
-// FIXED: Score Adjustments endpoints
+// Score Adjustments endpoints
 app.get('/api/score-adjustments', async (req, res) => {
   try {
     const { tournamentId } = req.query;
     let filter = {};
     
     if (tournamentId) {
-      // Support both tournament ID formats
       const tournament = await findTournamentById(tournamentId);
       if (tournament) {
         filter = { 
@@ -1238,7 +1255,6 @@ app.get('/api/score-adjustments', async (req, res) => {
     
     const adjustments = await ScoreAdjustment.find(filter).lean();
     
-    // Format adjustments with id field
     const formattedAdjustments = adjustments.map(adjustment => ({
       ...adjustment,
       id: adjustment._id.toString()
@@ -1253,7 +1269,6 @@ app.get('/api/score-adjustments', async (req, res) => {
 
 app.post('/api/score-adjustments', async (req, res) => {
   try {
-    // Verify tournament exists and use real _id
     const tournament = await findTournamentById(req.body.tournamentId);
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
@@ -1276,7 +1291,6 @@ app.post('/api/score-adjustments', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit score adjustment creation
     const adjustmentResponseData = {
       ...adjustment.toObject(),
       id: adjustment._id.toString()
@@ -1305,7 +1319,6 @@ app.delete('/api/score-adjustments/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit score adjustment deletion
     io.to(`tournament-${adjustment.tournamentId}`).emit('scoreAdjustmentDeleted', { 
       adjustmentId: req.params.id,
       teamCode: adjustment.teamCode,
@@ -1324,12 +1337,11 @@ app.delete('/api/score-adjustments/:id', async (req, res) => {
   }
 });
 
-// FIXED: Managers endpoints
+// Managers endpoints
 app.get('/api/managers', async (req, res) => {
   try {
     const managers = await Manager.find().lean();
     
-    // Format managers with id field
     const formattedManagers = managers.map(manager => ({
       ...manager,
       id: manager._id.toString()
@@ -1354,7 +1366,6 @@ app.post('/api/managers', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit manager creation
     const managerData = {
       ...manager.toObject(),
       id: manager._id.toString()
@@ -1387,7 +1398,6 @@ app.put('/api/managers/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit manager update
     const managerData = {
       ...manager.toObject(),
       id: manager._id.toString()
@@ -1416,7 +1426,6 @@ app.delete('/api/managers/:id', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit manager deletion
     io.emit('managerDeleted', { 
       managerId: req.params.id,
       managerCode: manager.code
@@ -1429,14 +1438,13 @@ app.delete('/api/managers/:id', async (req, res) => {
   }
 });
 
-// FIXED: Audit Logs endpoints
+// Audit Logs endpoints
 app.get('/api/audit-logs', async (req, res) => {
   try {
     const { tournamentId, limit = 100 } = req.query;
     let filter = {};
     
     if (tournamentId) {
-      // Support both tournament ID formats
       const tournament = await findTournamentById(tournamentId);
       if (tournament) {
         filter = { 
@@ -1455,7 +1463,6 @@ app.get('/api/audit-logs', async (req, res) => {
       .limit(parseInt(limit))
       .lean();
     
-    // Format audit logs with id field
     const formattedAuditLogs = auditLogs.map(log => ({
       ...log,
       id: log._id.toString()
@@ -1470,7 +1477,6 @@ app.get('/api/audit-logs', async (req, res) => {
 
 app.post('/api/audit-logs', async (req, res) => {
   try {
-    // If tournamentId is provided, verify it exists and use real _id
     if (req.body.tournamentId) {
       const tournament = await findTournamentById(req.body.tournamentId);
       if (tournament) {
@@ -1488,7 +1494,6 @@ app.post('/api/audit-logs', async (req, res) => {
       ip: req.ip 
     });
     
-    // Emit audit log creation
     const auditLogData = {
       ...auditLog.toObject(),
       id: auditLog._id.toString()
@@ -1502,7 +1507,10 @@ app.post('/api/audit-logs', async (req, res) => {
   }
 });
 
-// FIXED: Authentication with enhanced security
+// =====================================
+// AUTHENTICATION
+// =====================================
+
 app.post('/api/auth/login', [
   body('code').trim().isLength({ min: 1, max: 50 }).escape(),
   body('type').isIn(['admin', 'manager', 'team'])
@@ -1527,7 +1535,6 @@ app.post('/api/auth/login', [
     } else if (type === 'team') {
       const team = await Team.findOne({ code }).lean();
       if (team) {
-        // Find tournament using the flexible helper function
         const tournament = await findTournamentById(team.tournamentId);
         if (tournament && tournament.status === 'active') {
           logger.info('Team login successful', { teamCode: code, tournamentId: team.tournamentId, ip: req.ip });
@@ -1535,7 +1542,7 @@ app.post('/api/auth/login', [
             success: true, 
             userType: 'team', 
             identifier: code,
-            tournamentId: tournament._id.toString() // Always return the real _id
+            tournamentId: tournament._id.toString()
           });
         }
       }
@@ -1549,7 +1556,11 @@ app.post('/api/auth/login', [
   }
 });
 
-// Homepage di benvenuto
+// =====================================
+// UTILITY ENDPOINTS
+// =====================================
+
+// Homepage
 app.get('/', (req, res) => {
   res.json({
     message: '🎮 Warzone Tournament API',
@@ -1559,18 +1570,17 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/api/health',
       auditLogs: '/api/audit-logs',
-      login: '/api/login'
+      login: '/api/auth/login'
     },
-    documentation: 'API successfully deployed on Render'
+    documentation: 'API successfully deployed'
   });
 });
 
-// Health check endpoint with enhanced information
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   try {
     console.log('🔍 Health check requested');
     console.log('📊 MongoDB state:', mongoose.connection.readyState);
-    console.log('📊 Process uptime:', process.uptime());
     
     const mongoStates = {
       0: 'disconnected',
@@ -1596,9 +1606,6 @@ app.get('/api/health', (req, res) => {
     
     console.log('✅ Health data prepared:', healthData.status);
     
-    // Commenta temporaneamente il logger se dà problemi
-    // logger.info('Health check', { ip: req.ip, status: healthData.status });
-    
     res.json(healthData);
   } catch (error) {
     console.error('❌ Health check error:', error);
@@ -1609,6 +1616,10 @@ app.get('/api/health', (req, res) => {
     });
   }
 });
+
+// =====================================
+// ERROR HANDLING & 404
+// =====================================
 
 // Enhanced error handling middleware
 app.use((error, req, res, next) => {
@@ -1640,6 +1651,10 @@ app.use('/api/*', (req, res) => {
   });
 });
 
+// =====================================
+// SERVER STARTUP & SHUTDOWN
+// =====================================
+
 // Start server
 const PORT = process.env.PORT || 5000;
 
@@ -1647,12 +1662,10 @@ console.log('🚀 Starting server...');
 console.log('📊 PORT:', PORT);
 console.log('📊 NODE_ENV:', process.env.NODE_ENV);
 
-// Avvia il server PRIMA della connessione DB per test
+// Start the server
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log('✅ SERVER STARTED ON PORT', PORT);
   console.log('🌐 Server accessible on 0.0.0.0:' + PORT);
-  
-  // Log dello stato MongoDB DOPO l'avvio
   console.log('📊 MongoDB state:', mongoose.connection.readyState);
   
   logger.info('Server started', {
