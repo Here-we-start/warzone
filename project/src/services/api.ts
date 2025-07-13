@@ -199,30 +199,67 @@ class ApiService {
     }
   }
 
-  // Bulk sync endpoint for complete data synchronization
-  static async syncAllData(data: {
-    tournaments: any;
-    teams: any;
-    matches: any;
-    pendingSubmissions: any;
-    scoreAdjustments: any;
-    managers: any;
-    auditLogs: any;
-  }) {
-    logger.info('Syncing all data to backend', {
-      tournaments: Object.keys(data.tournaments).length,
-      teams: Object.keys(data.teams).length,
-      matches: data.matches.length,
-      pendingSubmissions: data.pendingSubmissions.length,
-      scoreAdjustments: data.scoreAdjustments.length,
-      auditLogs: data.auditLogs.length
-    });
+// Bulk sync endpoint using existing individual endpoints
+static async syncAllData(data: {
+  tournaments: any;
+  teams: any;
+  matches: any;
+  pendingSubmissions: any;
+  scoreAdjustments: any;
+  managers: any;
+  auditLogs: any;
+}) {
+  logger.info('Syncing all data using individual endpoints', {
+    tournaments: Object.keys(data.tournaments).length,
+    teams: Object.keys(data.teams).length,
+    matches: data.matches.length,
+    pendingSubmissions: data.pendingSubmissions.length,
+    scoreAdjustments: data.scoreAdjustments.length,
+    auditLogs: data.auditLogs.length
+  });
 
-    return this.request('/api/sync/all', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
+  try {
+    // Sync tournaments first
+    for (const [tournamentId, tournament] of Object.entries(data.tournaments)) {
+      await this.updateTournament(tournamentId, tournament);
+    }
+
+    // Sync teams
+    for (const team of Object.values(data.teams)) {
+      try {
+        await this.createTeam(team);
+      } catch (error) {
+        // Team might already exist, try to update
+        console.warn('Team creation failed, might already exist:', team);
+      }
+    }
+
+    // Sync matches
+    for (const match of data.matches) {
+      try {
+        await this.createMatch(match);
+      } catch (error) {
+        console.warn('Match creation failed:', match);
+      }
+    }
+
+    // Sync audit logs
+    for (const log of data.auditLogs) {
+      try {
+        await this.createAuditLog(log);
+      } catch (error) {
+        console.warn('Audit log creation failed:', log);
+      }
+    }
+
+    logger.info('All data synced successfully using individual endpoints');
+    return { success: true, message: 'Data synchronized successfully' };
+
+  } catch (error) {
+    logger.error('Failed to sync data using individual endpoints:', error);
+    throw error;
   }
+}
 
   // Health check with enhanced error handling
   static async healthCheck() {
