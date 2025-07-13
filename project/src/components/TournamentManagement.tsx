@@ -386,36 +386,105 @@ export default function TournamentManagement({
     );
   };
 
-  const completeTournament = () => {
-    if (!confirm(`Sei sicuro di voler completare il torneo "${tournament.name}"? Non sarà più possibile modificarlo.`)) return;
+const completeTournament = () => {
+  if (!confirm(`⚠️ ATTENZIONE! Sei sicuro di voler TERMINARE DEFINITIVAMENTE il torneo "${tournament.name}"?\n\nQuesta azione:\n- Terminerà il torneo e lo rimuoverà dai tornei attivi\n- Eliminerà tutte le squadre e le loro sessioni di login\n- Salverà una copia nell'archivio solo per consultazione\n- I team non potranno più accedere o inviare punteggi\n\nQuesta azione NON PUÒ essere annullata!`)) return;
 
-    // Calculate final leaderboard before completing
+  try {
+    console.log('🏁 Terminando torneo completamente:', tournamentId);
+
+    // 1. Calcola la classifica finale prima di terminare
     const finalLeaderboard = getLeaderboard();
 
+    // 2. Crea una copia archiviata del torneo con tutti i dati per consultazione
+    const archivedTournament = {
+      ...tournament,
+      status: 'archived',
+      endedAt: Date.now(),
+      completedAt: Date.now(),
+      finalLeaderboard,
+      // Salva snapshot dei dati al momento della terminazione
+      archivedData: {
+        teams: Object.values(teams).filter(team => team.tournamentId === tournamentId),
+        matches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved'),
+        adjustments: scoreAdjustments.filter(adj => adj.tournamentId === tournamentId),
+        totalTeams: Object.values(teams).filter(team => team.tournamentId === tournamentId).length,
+        totalMatches: matches.filter(match => match.tournamentId === tournamentId && match.status === 'approved').length
+      }
+    };
+
+    // 3. Salva nell'archivio
     setTournaments(prev => ({
       ...prev,
-      [tournamentId]: {
-        ...tournament,
-        status: 'completed',
-        endedAt: Date.now(),
-        completedAt: Date.now(),
-        finalLeaderboard
-      }
+      [tournamentId]: archivedTournament
     }));
 
+    // 4. ELIMINA COMPLETAMENTE tutti i dati operativi del torneo
+
+    // Elimina tutte le squadre del torneo (questo termina le loro sessioni)
+    const tournamentTeamIds = Object.values(teams)
+      .filter(team => team.tournamentId === tournamentId)
+      .map(team => team.id);
+
+    setTeams(prev => {
+      const newTeams = { ...prev };
+      tournamentTeamIds.forEach(teamId => {
+        delete newTeams[teamId];
+      });
+      return newTeams;
+    });
+
+    // Elimina tutte le partite operative
+    setMatches(prev => prev.filter(match => match.tournamentId !== tournamentId));
+
+    // Elimina tutte le submission pendenti
+    setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== tournamentId));
+
+    // Elimina tutti gli aggiustamenti operativi
+    setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== tournamentId));
+
+    // 5. Log dell'eliminazione completa
     logAction(
       auditLogs,
       setAuditLogs,
-      'TOURNAMENT_COMPLETED',
-      `Torneo completato: ${tournament.name}`,
+      'TOURNAMENT_TERMINATED',
+      `Torneo terminato definitivamente: ${tournament.name} - ${finalLeaderboard.length} squadre, ${matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length} partite. Salvato in archivio per consultazione.`,
       'admin',
       'admin',
-      { tournamentId }
+      { 
+        tournamentId, 
+        tournamentName: tournament.name,
+        finalTeams: finalLeaderboard.length,
+        finalMatches: matches.filter(m => m.tournamentId === tournamentId && m.status === 'approved').length
+      }
     );
 
-    onClose();
-  };
+    // 6. Broadcast per terminare tutte le sessioni attive
+    if ('BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('warzone-global-sync');
+        channel.postMessage({
+          type: 'tournament-terminated',
+          tournamentId: tournamentId,
+          message: `Il torneo "${tournament.name}" è stato terminato. Tutte le sessioni sono state chiuse.`,
+          timestamp: Date.now()
+        });
+        channel.close();
+      } catch (error) {
+        console.warn('Tournament termination broadcast failed:', error);
+      }
+    }
 
+    // 7. Chiudi il modal
+    onClose();
+
+    console.log('✅ Torneo terminato completamente e archiviato');
+    alert(`✅ Torneo "${tournament.name}" terminato con successo!\n\n📊 Classifica finale salvata con ${finalLeaderboard.length} squadre.\n📁 Disponibile per consultazione nella sezione Archivio.`);
+
+  } catch (error) {
+    console.error('❌ Errore durante la terminazione:', error);
+    alert('❌ Errore durante la terminazione del torneo');
+  }
+};
   const exportCSV = () => {
     const leaderboard = getLeaderboard();
     let csv = 'Rank,Team,Code,Match Score,Adjustments,Final Score,Matches Played\n';
