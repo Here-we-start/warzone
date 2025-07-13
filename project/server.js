@@ -269,7 +269,19 @@ mongoose.connection.on('reconnected', () => {
   logger.info('MongoDB reconnected');
 });
 
-// Input validation schemas
+// Helper function to detect MongoDB ObjectId format
+const isValidObjectId = (id) => /^[0-9a-fA-F]{24}$/.test(id);
+
+// Helper function to find tournament by either _id or custom id
+const findTournamentById = async (id) => {
+  if (isValidObjectId(id)) {
+    return await Tournament.findById(id).lean();
+  } else {
+    return await Tournament.findOne({ id: id }).lean();
+  }
+};
+
+// Input validation schemas - UPDATE to be more flexible with tournament IDs
 const tournamentValidation = [
   body('name').trim().isLength({ min: 1, max: 100 }).escape(),
   body('type').isIn(['Ritorno', 'BR']),
@@ -280,18 +292,20 @@ const tournamentValidation = [
   body('settings.countedMatches').isInt({ min: 1, max: 20 })
 ];
 
+// UPDATED: More flexible team validation - tournamentId can be string or ObjectId
 const teamValidation = [
   body('name').trim().isLength({ min: 1, max: 50 }).escape(),
-  body('tournamentId').isMongoId(),
+  body('tournamentId').isLength({ min: 1 }).withMessage('Tournament ID is required'),
   body('playerName').optional().trim().isLength({ max: 50 }).escape(),
   body('clanName').optional().trim().isLength({ max: 50 }).escape()
 ];
 
+// UPDATED: More flexible match validation
 const matchValidation = [
   body('position').isInt({ min: 1, max: 100 }),
   body('kills').isInt({ min: 0, max: 100 }),
   body('teamCode').trim().isLength({ min: 1, max: 20 }).escape(),
-  body('tournamentId').isMongoId(),
+  body('tournamentId').isLength({ min: 1 }).withMessage('Tournament ID is required'),
   body('photos').isArray({ max: 5 })
 ];
 
@@ -465,7 +479,7 @@ io.on('connection', (socket) => {
 
 // API Routes with enhanced error handling
 
-// Get all tournaments
+// FIXED: Get all tournaments with proper ID mapping
 app.get('/api/tournaments', async (req, res) => {
   try {
     // Check if MongoDB is connected
@@ -483,11 +497,17 @@ app.get('/api/tournaments', async (req, res) => {
       .limit(50)
       .lean();
     
-    logger.info('Tournaments fetched', { count: tournaments.length, ip: req.ip });
+    // FIXED: Ensure all tournaments have the id field mapped from _id
+    const formattedTournaments = tournaments.map(tournament => ({
+      ...tournament,
+      id: tournament._id.toString()
+    }));
+    
+    logger.info('Tournaments fetched', { count: formattedTournaments.length, ip: req.ip });
     
     res.json({ 
       success: true,
-      tournaments: tournaments || [] 
+      tournaments: formattedTournaments || [] 
     });
   } catch (error) {
     logger.error('Get tournaments error', { error: error.message, ip: req.ip });
@@ -508,22 +528,35 @@ app.get('/api/tournaments', async (req, res) => {
   }
 });
 
-// Get tournament by ID
+// FIXED: Get tournament by ID - supports both formats
 app.get('/api/tournaments/:id', async (req, res) => {
   try {
-    const tournament = await Tournament.findById(req.params.id).lean();
+    let tournament;
+    
+    if (isValidObjectId(req.params.id)) {
+      tournament = await Tournament.findById(req.params.id).lean();
+    } else {
+      tournament = await Tournament.findOne({ id: req.params.id }).lean();
+    }
+    
     if (!tournament) {
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
-    res.json({ success: true, tournament });
+    // Add id field for frontend compatibility
+    const responseData = {
+      ...tournament,
+      id: tournament._id.toString()
+    };
+    
+    res.json({ success: true, tournament: responseData });
   } catch (error) {
     logger.error('Get tournament error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch tournament' });
   }
 });
 
-// Create tournament with validation
+// ALREADY FIXED: Create tournament with validation
 app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async (req, res) => {
   try {
     console.log('📝 ===== TOURNAMENT CREATION DEBUG =====');
@@ -585,84 +618,229 @@ app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async
   }
 });
 
-// Update tournament
+// ALREADY FIXED: Update tournament
 app.put('/api/tournaments/:id', tournamentValidation, handleValidationErrors, async (req, res) => {
   try {
-    const tournament = await Tournament.findByIdAndUpdate(
-      req.params.id, 
-      req.body, 
-      { new: true, runValidators: true }
-    );
+    console.log('📝 ===== TOURNAMENT UPDATE DEBUG =====');
+    console.log('📄 Tournament ID from URL:', req.params.id);
+    console.log('📄 Update data:', JSON.stringify(req.body, null, 2));
+    
+    // Try to find tournament by MongoDB _id first, then fallback to custom id field
+    let tournament;
+    
+    // Check if the ID looks like a MongoDB ObjectId (24 hex characters)
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    
+    if (isMongoId) {
+      console.log('🔍 Searching by MongoDB _id:', req.params.id);
+      tournament = await Tournament.findByIdAndUpdate(
+        req.params.id, 
+        req.body, 
+        { new: true, runValidators: true }
+      );
+    } else {
+      console.log('🔍 Searching by custom id field:', req.params.id);
+      tournament = await Tournament.findOneAndUpdate(
+        { id: req.params.id }, 
+        req.body, 
+        { new: true, runValidators: true }
+      );
+    }
     
     if (!tournament) {
+      console.log('❌ Tournament not found with ID:', req.params.id);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
+    
+    console.log('✅ Tournament updated successfully!');
+    console.log('📊 Updated tournament data:', JSON.stringify(tournament.toObject(), null, 2));
     
     logger.info('Tournament updated', { 
       tournamentId: tournament._id, 
       name: tournament.name,
+      status: req.body.status || tournament.status,
+      updatedFields: Object.keys(req.body),
       ip: req.ip 
     });
     
-    // Emit tournament update to all clients
-    io.emit('tournamentUpdated', { 
-      tournament: {
-        ...tournament.toObject(),
-        id: tournament._id.toString()
-      }
-    });
+    // Create response data with frontend-compatible format
+    const responseData = {
+      ...tournament.toObject(),
+      id: tournament._id.toString() // Ensure frontend gets the id field
+    };
     
-    res.json({ success: true, tournament });
+    console.log('📤 Response data prepared for frontend');
+    
+    // Emit tournament update to all clients
+    io.emit('tournamentUpdated', { tournament: responseData });
+    
+    res.json({ success: true, tournament: responseData });
   } catch (error) {
+    console.error('❌ ===== TOURNAMENT UPDATE ERROR =====');
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error name:', error.name);
+    console.error('❌ Error stack:', error.stack);
+    
+    if (error.name === 'ValidationError') {
+      console.error('❌ Validation errors:');
+      Object.keys(error.errors || {}).forEach(key => {
+        console.error(`❌   Field: ${key}, Message: ${error.errors[key].message}`);
+      });
+    }
+    
     logger.error('Update tournament error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to update tournament' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to update tournament',
+      details: error.message,
+      errorType: error.name
+    });
   }
 });
 
-// Delete tournament
+// ALREADY FIXED: Delete tournament
 app.delete('/api/tournaments/:id', async (req, res) => {
   try {
-    const tournament = await Tournament.findByIdAndDelete(req.params.id);
+    console.log('📝 ===== TOURNAMENT DELETE DEBUG =====');
+    console.log('📄 Tournament ID from URL:', req.params.id);
+    
+    // Try to find tournament by MongoDB _id first, then fallback to custom id field
+    let tournament;
+    
+    // Check if the ID looks like a MongoDB ObjectId (24 hex characters)
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    
+    if (isMongoId) {
+      console.log('🔍 Deleting by MongoDB _id:', req.params.id);
+      tournament = await Tournament.findByIdAndDelete(req.params.id);
+    } else {
+      console.log('🔍 Deleting by custom id field:', req.params.id);
+      tournament = await Tournament.findOneAndDelete({ id: req.params.id });
+    }
     
     if (!tournament) {
+      console.log('❌ Tournament not found with ID:', req.params.id);
       return res.status(404).json({ success: false, error: 'Tournament not found' });
     }
     
+    console.log('✅ Tournament deleted successfully!');
+    console.log('📊 Deleted tournament:', tournament.name);
+    
     logger.info('Tournament deleted', { 
-      tournamentId: req.params.id, 
+      tournamentId: tournament._id, 
       name: tournament.name,
       ip: req.ip 
     });
     
     // Emit tournament deletion to all clients
     io.emit('tournamentDeleted', { 
-      tournamentId: req.params.id,
+      tournamentId: tournament._id.toString(), // Use actual MongoDB _id
       tournamentName: tournament.name
     });
     
     res.json({ success: true, message: 'Tournament deleted successfully' });
   } catch (error) {
+    console.error('❌ ===== TOURNAMENT DELETE ERROR =====');
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
     logger.error('Delete tournament error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to delete tournament' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete tournament',
+      details: error.message
+    });
   }
 });
 
-// Get teams for tournament
+// FIXED: Get teams for tournament
 app.get('/api/tournaments/:id/teams', async (req, res) => {
   try {
-    const teams = await Team.find({ tournamentId: req.params.id }).lean();
-    res.json({ success: true, teams });
+    console.log('📝 ===== GET TEAMS DEBUG =====');
+    console.log('📄 Tournament ID from URL:', req.params.id);
+    
+    // First, find the actual tournament to get its real _id
+    let tournament;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.params.id);
+    
+    if (isMongoId) {
+      console.log('🔍 Searching tournament by MongoDB _id:', req.params.id);
+      tournament = await Tournament.findById(req.params.id).lean();
+    } else {
+      console.log('🔍 Searching tournament by custom id field:', req.params.id);
+      tournament = await Tournament.findOne({ id: req.params.id }).lean();
+    }
+    
+    if (!tournament) {
+      console.log('❌ Tournament not found with ID:', req.params.id);
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const actualTournamentId = tournament._id.toString();
+    console.log('✅ Found tournament, actual _id:', actualTournamentId);
+    
+    // Find teams using both possible tournamentId formats
+    const teams = await Team.find({
+      $or: [
+        { tournamentId: actualTournamentId },
+        { tournamentId: req.params.id }
+      ]
+    }).lean();
+    
+    // Format teams with id field for frontend compatibility
+    const formattedTeams = teams.map(team => ({
+      ...team,
+      id: team._id.toString()
+    }));
+    
+    console.log('✅ Found teams:', formattedTeams.length);
+    
+    res.json({ success: true, teams: formattedTeams });
   } catch (error) {
+    console.error('❌ Get teams error:', error.message);
     logger.error('Get teams error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch teams' });
   }
 });
 
-// Create team with validation
+// FIXED: Create team with validation
 app.post('/api/teams', teamValidation, handleValidationErrors, async (req, res) => {
   try {
-    const team = new Team(req.body);
+    console.log('📝 ===== TEAM CREATION DEBUG =====');
+    console.log('📄 Request body:', JSON.stringify(req.body, null, 2));
+    
+    // Verify tournament exists and get its real _id
+    let tournament;
+    const isMongoId = /^[0-9a-fA-F]{24}$/.test(req.body.tournamentId);
+    
+    if (isMongoId) {
+      console.log('🔍 Verifying tournament by MongoDB _id:', req.body.tournamentId);
+      tournament = await Tournament.findById(req.body.tournamentId).lean();
+    } else {
+      console.log('🔍 Verifying tournament by custom id field:', req.body.tournamentId);
+      tournament = await Tournament.findOne({ id: req.body.tournamentId }).lean();
+    }
+    
+    if (!tournament) {
+      console.log('❌ Tournament not found with ID:', req.body.tournamentId);
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const actualTournamentId = tournament._id.toString();
+    console.log('✅ Tournament verified, actual _id:', actualTournamentId);
+    
+    // Create team with the actual tournament _id
+    const teamData = {
+      ...req.body,
+      tournamentId: actualTournamentId // Use the real MongoDB _id
+    };
+    
+    console.log('🏗️ Creating team with data:', JSON.stringify(teamData, null, 2));
+    
+    const team = new Team(teamData);
     await team.save();
+    
+    console.log('✅ Team created successfully:', team._id);
     
     logger.info('Team created', { 
       teamId: team._id, 
@@ -672,24 +850,44 @@ app.post('/api/teams', teamValidation, handleValidationErrors, async (req, res) 
       ip: req.ip 
     });
     
-    // Emit to tournament room and all clients
-    const teamData = {
+    // Format team data for frontend
+    const responseTeamData = {
       ...team.toObject(),
       id: team._id.toString()
     };
-    io.to(`tournament-${team.tournamentId}`).emit('teamCreated', { team: teamData });
-    io.emit('teamCreated', { team: teamData });
     
-    res.json({ success: true, team });
+    // Emit to tournament room and all clients
+    io.to(`tournament-${actualTournamentId}`).emit('teamCreated', { team: responseTeamData });
+    io.emit('teamCreated', { team: responseTeamData });
+    
+    res.json({ success: true, team: responseTeamData });
   } catch (error) {
+    console.error('❌ ===== TEAM CREATION ERROR =====');
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
     logger.error('Create team error', { error: error.message, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to create team' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to create team',
+      details: error.message
+    });
   }
 });
 
-// Update team
+// FIXED: Update team
 app.put('/api/teams/:id', teamValidation, handleValidationErrors, async (req, res) => {
   try {
+    // If tournamentId is being updated, verify the new tournament exists
+    if (req.body.tournamentId) {
+      const tournament = await findTournamentById(req.body.tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ success: false, error: 'Tournament not found' });
+      }
+      // Use the actual tournament _id
+      req.body.tournamentId = tournament._id.toString();
+    }
+    
     const team = await Team.findByIdAndUpdate(
       req.params.id, 
       req.body, 
@@ -715,14 +913,14 @@ app.put('/api/teams/:id', teamValidation, handleValidationErrors, async (req, re
     io.to(`tournament-${team.tournamentId}`).emit('teamUpdated', { team: teamData });
     io.emit('teamUpdated', { team: teamData });
     
-    res.json({ success: true, team });
+    res.json({ success: true, team: teamData });
   } catch (error) {
     logger.error('Update team error', { error: error.message, teamId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to update team' });
   }
 });
 
-// Delete team
+// FIXED: Delete team
 app.delete('/api/teams/:id', async (req, res) => {
   try {
     const team = await Team.findByIdAndDelete(req.params.id);
@@ -757,21 +955,54 @@ app.delete('/api/teams/:id', async (req, res) => {
   }
 });
 
-// Get matches for tournament
+// FIXED: Get matches for tournament
 app.get('/api/tournaments/:id/matches', async (req, res) => {
   try {
-    const matches = await Match.find({ tournamentId: req.params.id }).lean();
-    res.json({ success: true, matches });
+    // Find the tournament first to get the real _id
+    const tournament = await findTournamentById(req.params.id);
+    if (!tournament) {
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const actualTournamentId = tournament._id.toString();
+    
+    // Find matches using both possible tournamentId formats
+    const matches = await Match.find({
+      $or: [
+        { tournamentId: actualTournamentId },
+        { tournamentId: req.params.id }
+      ]
+    }).lean();
+    
+    // Format matches with id field for frontend compatibility
+    const formattedMatches = matches.map(match => ({
+      ...match,
+      id: match._id.toString()
+    }));
+    
+    res.json({ success: true, matches: formattedMatches });
   } catch (error) {
     logger.error('Get matches error', { error: error.message, tournamentId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch matches' });
   }
 });
 
-// Create match with validation
+// FIXED: Create match with validation
 app.post('/api/matches', matchValidation, handleValidationErrors, async (req, res) => {
   try {
-    const match = new Match(req.body);
+    // Verify tournament exists and get its real _id
+    const tournament = await findTournamentById(req.body.tournamentId);
+    if (!tournament) {
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    // Create match with the actual tournament _id
+    const matchData = {
+      ...req.body,
+      tournamentId: tournament._id.toString()
+    };
+    
+    const match = new Match(matchData);
     await match.save();
     
     logger.info('Match created', { 
@@ -784,23 +1015,33 @@ app.post('/api/matches', matchValidation, handleValidationErrors, async (req, re
     });
     
     // Emit match creation
-    const matchData = {
+    const matchResponseData = {
       ...match.toObject(),
       id: match._id.toString()
     };
-    io.to(`tournament-${match.tournamentId}`).emit('matchCreated', { match: matchData });
-    io.emit('matchCreated', { match: matchData });
+    io.to(`tournament-${match.tournamentId}`).emit('matchCreated', { match: matchResponseData });
+    io.emit('matchCreated', { match: matchResponseData });
     
-    res.json({ success: true, match });
+    res.json({ success: true, match: matchResponseData });
   } catch (error) {
     logger.error('Create match error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to create match' });
   }
 });
 
-// Update match
+// FIXED: Update match
 app.put('/api/matches/:id', matchValidation, handleValidationErrors, async (req, res) => {
   try {
+    // If tournamentId is being updated, verify the new tournament exists
+    if (req.body.tournamentId) {
+      const tournament = await findTournamentById(req.body.tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ success: false, error: 'Tournament not found' });
+      }
+      // Use the actual tournament _id
+      req.body.tournamentId = tournament._id.toString();
+    }
+    
     const match = await Match.findByIdAndUpdate(
       req.params.id, 
       req.body, 
@@ -826,14 +1067,14 @@ app.put('/api/matches/:id', matchValidation, handleValidationErrors, async (req,
     io.to(`tournament-${match.tournamentId}`).emit('matchUpdated', { match: matchData });
     io.emit('matchUpdated', { match: matchData });
     
-    res.json({ success: true, match });
+    res.json({ success: true, match: matchData });
   } catch (error) {
     logger.error('Update match error', { error: error.message, matchId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to update match' });
   }
 });
 
-// Delete match
+// FIXED: Delete match
 app.delete('/api/matches/:id', async (req, res) => {
   try {
     const match = await Match.findByIdAndDelete(req.params.id);
@@ -867,13 +1108,36 @@ app.delete('/api/matches/:id', async (req, res) => {
   }
 });
 
-// Pending Submissions endpoints
+// FIXED: Pending Submissions endpoints
 app.get('/api/pending-submissions', async (req, res) => {
   try {
     const { tournamentId } = req.query;
-    const filter = tournamentId ? { tournamentId } : {};
+    let filter = {};
+    
+    if (tournamentId) {
+      // Support both tournament ID formats
+      const tournament = await findTournamentById(tournamentId);
+      if (tournament) {
+        filter = { 
+          $or: [
+            { tournamentId: tournament._id.toString() },
+            { tournamentId: tournamentId }
+          ]
+        };
+      } else {
+        filter = { tournamentId };
+      }
+    }
+    
     const submissions = await PendingSubmission.find(filter).lean();
-    res.json({ success: true, pendingSubmissions: submissions });
+    
+    // Format submissions with id field
+    const formattedSubmissions = submissions.map(submission => ({
+      ...submission,
+      id: submission._id.toString()
+    }));
+    
+    res.json({ success: true, pendingSubmissions: formattedSubmissions });
   } catch (error) {
     logger.error('Get pending submissions error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch pending submissions' });
@@ -882,7 +1146,18 @@ app.get('/api/pending-submissions', async (req, res) => {
 
 app.post('/api/pending-submissions', async (req, res) => {
   try {
-    const submission = new PendingSubmission(req.body);
+    // Verify tournament exists and use real _id
+    const tournament = await findTournamentById(req.body.tournamentId);
+    if (!tournament) {
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const submissionData = {
+      ...req.body,
+      tournamentId: tournament._id.toString()
+    };
+    
+    const submission = new PendingSubmission(submissionData);
     await submission.save();
     
     logger.info('Pending submission created', { 
@@ -893,14 +1168,14 @@ app.post('/api/pending-submissions', async (req, res) => {
     });
     
     // Emit pending submission creation
-    const submissionData = {
+    const submissionResponseData = {
       ...submission.toObject(),
       id: submission._id.toString()
     };
-    io.to(`tournament-${submission.tournamentId}`).emit('pendingSubmissionCreated', { pendingSubmission: submissionData });
-    io.emit('pendingSubmissionCreated', { pendingSubmission: submissionData });
+    io.to(`tournament-${submission.tournamentId}`).emit('pendingSubmissionCreated', { pendingSubmission: submissionResponseData });
+    io.emit('pendingSubmissionCreated', { pendingSubmission: submissionResponseData });
     
-    res.json({ success: true, pendingSubmission: submission });
+    res.json({ success: true, pendingSubmission: submissionResponseData });
   } catch (error) {
     logger.error('Create pending submission error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to create pending submission' });
@@ -940,13 +1215,36 @@ app.delete('/api/pending-submissions/:id', async (req, res) => {
   }
 });
 
-// Score Adjustments endpoints
+// FIXED: Score Adjustments endpoints
 app.get('/api/score-adjustments', async (req, res) => {
   try {
     const { tournamentId } = req.query;
-    const filter = tournamentId ? { tournamentId } : {};
+    let filter = {};
+    
+    if (tournamentId) {
+      // Support both tournament ID formats
+      const tournament = await findTournamentById(tournamentId);
+      if (tournament) {
+        filter = { 
+          $or: [
+            { tournamentId: tournament._id.toString() },
+            { tournamentId: tournamentId }
+          ]
+        };
+      } else {
+        filter = { tournamentId };
+      }
+    }
+    
     const adjustments = await ScoreAdjustment.find(filter).lean();
-    res.json({ success: true, scoreAdjustments: adjustments });
+    
+    // Format adjustments with id field
+    const formattedAdjustments = adjustments.map(adjustment => ({
+      ...adjustment,
+      id: adjustment._id.toString()
+    }));
+    
+    res.json({ success: true, scoreAdjustments: formattedAdjustments });
   } catch (error) {
     logger.error('Get score adjustments error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch score adjustments' });
@@ -955,7 +1253,18 @@ app.get('/api/score-adjustments', async (req, res) => {
 
 app.post('/api/score-adjustments', async (req, res) => {
   try {
-    const adjustment = new ScoreAdjustment(req.body);
+    // Verify tournament exists and use real _id
+    const tournament = await findTournamentById(req.body.tournamentId);
+    if (!tournament) {
+      return res.status(404).json({ success: false, error: 'Tournament not found' });
+    }
+    
+    const adjustmentData = {
+      ...req.body,
+      tournamentId: tournament._id.toString()
+    };
+    
+    const adjustment = new ScoreAdjustment(adjustmentData);
     await adjustment.save();
     
     logger.info('Score adjustment created', { 
@@ -968,14 +1277,14 @@ app.post('/api/score-adjustments', async (req, res) => {
     });
     
     // Emit score adjustment creation
-    const adjustmentData = {
+    const adjustmentResponseData = {
       ...adjustment.toObject(),
       id: adjustment._id.toString()
     };
-    io.to(`tournament-${adjustment.tournamentId}`).emit('scoreAdjustmentCreated', { scoreAdjustment: adjustmentData });
-    io.emit('scoreAdjustmentCreated', { scoreAdjustment: adjustmentData });
+    io.to(`tournament-${adjustment.tournamentId}`).emit('scoreAdjustmentCreated', { scoreAdjustment: adjustmentResponseData });
+    io.emit('scoreAdjustmentCreated', { scoreAdjustment: adjustmentResponseData });
     
-    res.json({ success: true, scoreAdjustment: adjustment });
+    res.json({ success: true, scoreAdjustment: adjustmentResponseData });
   } catch (error) {
     logger.error('Create score adjustment error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to create score adjustment' });
@@ -1015,11 +1324,18 @@ app.delete('/api/score-adjustments/:id', async (req, res) => {
   }
 });
 
-// Managers endpoints
+// FIXED: Managers endpoints
 app.get('/api/managers', async (req, res) => {
   try {
     const managers = await Manager.find().lean();
-    res.json({ success: true, managers });
+    
+    // Format managers with id field
+    const formattedManagers = managers.map(manager => ({
+      ...manager,
+      id: manager._id.toString()
+    }));
+    
+    res.json({ success: true, managers: formattedManagers });
   } catch (error) {
     logger.error('Get managers error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch managers' });
@@ -1045,7 +1361,7 @@ app.post('/api/managers', async (req, res) => {
     };
     io.emit('managerCreated', { manager: managerData });
     
-    res.json({ success: true, manager });
+    res.json({ success: true, manager: managerData });
   } catch (error) {
     logger.error('Create manager error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to create manager' });
@@ -1078,7 +1394,7 @@ app.put('/api/managers/:id', async (req, res) => {
     };
     io.emit('managerUpdated', { manager: managerData });
     
-    res.json({ success: true, manager });
+    res.json({ success: true, manager: managerData });
   } catch (error) {
     logger.error('Update manager error', { error: error.message, managerId: req.params.id, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to update manager' });
@@ -1113,16 +1429,39 @@ app.delete('/api/managers/:id', async (req, res) => {
   }
 });
 
-// Audit Logs endpoints
+// FIXED: Audit Logs endpoints
 app.get('/api/audit-logs', async (req, res) => {
   try {
     const { tournamentId, limit = 100 } = req.query;
-    const filter = tournamentId ? { tournamentId } : {};
+    let filter = {};
+    
+    if (tournamentId) {
+      // Support both tournament ID formats
+      const tournament = await findTournamentById(tournamentId);
+      if (tournament) {
+        filter = { 
+          $or: [
+            { tournamentId: tournament._id.toString() },
+            { tournamentId: tournamentId }
+          ]
+        };
+      } else {
+        filter = { tournamentId };
+      }
+    }
+    
     const auditLogs = await AuditLog.find(filter)
       .sort({ timestamp: -1 })
       .limit(parseInt(limit))
       .lean();
-    res.json({ success: true, auditLogs });
+    
+    // Format audit logs with id field
+    const formattedAuditLogs = auditLogs.map(log => ({
+      ...log,
+      id: log._id.toString()
+    }));
+    
+    res.json({ success: true, auditLogs: formattedAuditLogs });
   } catch (error) {
     logger.error('Get audit logs error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
@@ -1131,6 +1470,14 @@ app.get('/api/audit-logs', async (req, res) => {
 
 app.post('/api/audit-logs', async (req, res) => {
   try {
+    // If tournamentId is provided, verify it exists and use real _id
+    if (req.body.tournamentId) {
+      const tournament = await findTournamentById(req.body.tournamentId);
+      if (tournament) {
+        req.body.tournamentId = tournament._id.toString();
+      }
+    }
+    
     const auditLog = new AuditLog(req.body);
     await auditLog.save();
     
@@ -1148,14 +1495,14 @@ app.post('/api/audit-logs', async (req, res) => {
     };
     io.emit('auditLogCreated', { auditLog: auditLogData });
     
-    res.json({ success: true, auditLog });
+    res.json({ success: true, auditLog: auditLogData });
   } catch (error) {
     logger.error('Create audit log error', { error: error.message, ip: req.ip });
     res.status(500).json({ success: false, error: 'Failed to create audit log' });
   }
 });
 
-// Authentication with enhanced security
+// FIXED: Authentication with enhanced security
 app.post('/api/auth/login', [
   body('code').trim().isLength({ min: 1, max: 50 }).escape(),
   body('type').isIn(['admin', 'manager', 'team'])
@@ -1180,14 +1527,15 @@ app.post('/api/auth/login', [
     } else if (type === 'team') {
       const team = await Team.findOne({ code }).lean();
       if (team) {
-        const tournament = await Tournament.findById(team.tournamentId).lean();
+        // Find tournament using the flexible helper function
+        const tournament = await findTournamentById(team.tournamentId);
         if (tournament && tournament.status === 'active') {
           logger.info('Team login successful', { teamCode: code, tournamentId: team.tournamentId, ip: req.ip });
           return res.json({ 
             success: true, 
             userType: 'team', 
             identifier: code,
-            tournamentId: team.tournamentId 
+            tournamentId: tournament._id.toString() // Always return the real _id
           });
         }
       }
@@ -1215,11 +1563,6 @@ app.get('/', (req, res) => {
     },
     documentation: 'API successfully deployed on Render'
   });
-});
-
-// Health check endpoint with enhanced information
-app.get('/api/health', (req, res) => {
-  // ... il resto del codice health check
 });
 
 // Health check endpoint with enhanced information
