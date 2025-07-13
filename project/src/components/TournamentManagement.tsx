@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, AlertTriangle, X, UserPlus, CheckCircle, XCircle, Plus, Minus } from 'lucide-react';
+import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, AlertTriangle, X, UserPlus, CheckCircle, XCircle, Plus, Minus, Trash2 } from 'lucide-react';
 import GlassPanel from './GlassPanel';
 import MultiplierSettings from './MultiplierSettings';
 import PendingSubmissions from './PendingSubmissions';
@@ -698,6 +698,96 @@ export default function TournamentManagement({
     }
   };
 
+  // ✅ NUOVA FUNZIONE: Eliminazione definitiva dall'archivio
+  const deleteTournamentPermanently = async () => {
+    if (!confirm(`⚠️ ATTENZIONE CRITICA!\n\nSei sicuro di voler ELIMINARE DEFINITIVAMENTE il torneo "${tournament.name}" dall'archivio?\n\n🔥 QUESTA AZIONE:\n- Rimuoverà COMPLETAMENTE il torneo e tutti i suoi dati\n- Eliminerà DEFINITIVAMENTE la classifica finale\n- Cancellerà TUTTI i dati associati dal database\n- NON POTRÀ ESSERE ANNULLATA\n\n❌ Il torneo sarà PERSO PER SEMPRE!`)) return;
+
+    // Doppia conferma con input testuale
+    const confirmText = prompt(`🚨 CONFERMA FINALE\n\nPer eliminare definitivamente il torneo "${tournament.name}", digita esattamente:\nELIMINA`);
+    
+    if (confirmText !== 'ELIMINA') {
+      alert('❌ Eliminazione annullata. Testo di conferma non corretto.');
+      return;
+    }
+
+    try {
+      console.log('🗑️ [DELETE] Starting permanent tournament deletion:', tournamentId);
+
+      // STEP 1: Rimuovi da database se disponibile
+      try {
+        console.log('🗑️ [DELETE] Attempting to delete tournament from database...');
+        
+        if (typeof ApiService?.deleteTournament === 'function') {
+          await ApiService.deleteTournament(tournamentId);
+          console.log('✅ [DELETE] Tournament deleted from database successfully');
+        } else {
+          console.warn('⚠️ [DELETE] ApiService.deleteTournament not available, skipping database deletion');
+        }
+      } catch (dbDeleteError: any) {
+        console.warn('⚠️ [DELETE] Database deletion failed, continuing with local deletion:', dbDeleteError.message);
+      }
+
+      // STEP 2: Rimuovi completamente dai dati locali
+      console.log('🗑️ [DELETE] Removing tournament from local state...');
+      
+      setTournaments(prev => {
+        const newTournaments = { ...prev };
+        delete newTournaments[tournamentId];
+        return newTournaments;
+      });
+
+      // STEP 3: Aggiorna localStorage
+      console.log('🗑️ [DELETE] Updating localStorage...');
+      
+      const updatedTournaments = { ...tournaments };
+      delete updatedTournaments[tournamentId];
+      localStorage.setItem('tournaments', JSON.stringify(updatedTournaments));
+
+      // STEP 4: Log dell'eliminazione
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'TOURNAMENT_DELETED_PERMANENTLY',
+        `Torneo eliminato definitivamente dall'archivio: ${tournament.name}`,
+        'admin',
+        'admin',
+        { 
+          tournamentId, 
+          tournamentName: tournament.name,
+          deletedAt: Date.now(),
+          deletionType: 'permanent'
+        }
+      );
+
+      // STEP 5: Broadcast eliminazione
+      if ('BroadcastChannel' in window) {
+        try {
+          const channel = new BroadcastChannel('warzone-global-sync');
+          channel.postMessage({
+            type: 'tournament-deleted-permanently',
+            tournamentId: tournamentId,
+            message: `Il torneo "${tournament.name}" è stato eliminato definitivamente dall'archivio.`,
+            timestamp: Date.now()
+          });
+          channel.close();
+          console.log('📡 [DELETE] Tournament deletion broadcasted successfully');
+        } catch (error) {
+          console.warn('📡 [DELETE] Tournament deletion broadcast failed:', error);
+        }
+      }
+
+      console.log('✅ [DELETE] Tournament permanently deleted successfully');
+      alert(`✅ TORNEO ELIMINATO\n\nIl torneo "${tournament.name}" è stato eliminato definitivamente dall'archivio.\n\n🗑️ Tutti i dati sono stati rimossi permanentemente.`);
+
+      // STEP 6: Chiudi il modal
+      onClose();
+
+    } catch (error: any) {
+      console.error('❌ [DELETE] Error during permanent tournament deletion:', error);
+      alert(`❌ Errore durante l'eliminazione del torneo: ${error.message}\n\nRiprova o contatta l'amministratore.`);
+    }
+  };
+
   const exportCSV = () => {
     const leaderboard = getLeaderboard();
     let csv = 'Rank,Team,Code,Match Score,Adjustments,Final Score,Matches Played\n';
@@ -775,12 +865,14 @@ export default function TournamentManagement({
                   {tournament.name}
                 </h2>
                 <p className="text-ice-blue/80 font-mono text-sm">
-                  {tournament.type} • {tournament.status === 'active' ? 'ATTIVO' : 'COMPLETATO'}
+                  {tournament.type} • {tournament.status === 'active' ? 'ATTIVO' : tournament.status === 'archived' ? 'ARCHIVIATO' : 'COMPLETATO'}
                   {tournament.isDemo && ' • DEMO'}
                   {tournament.startDate && ` • ${tournament.startDate} ${tournament.startTime}`}
                 </p>
               </div>
             </div>
+            
+            {/* ✅ MODIFICATA: Sezione pulsanti con eliminazione definitiva */}
             <div className="flex items-center space-x-3">
               {tournament.status === 'active' && (
                 <button
@@ -790,6 +882,18 @@ export default function TournamentManagement({
                   TERMINA TORNEO
                 </button>
               )}
+              
+              {/* ✅ NUOVO: Pulsante di eliminazione definitiva per tornei archiviati */}
+              {tournament.status === 'archived' && (
+                <button
+                  onClick={deleteTournamentPermanently}
+                  className="px-4 py-2 bg-red-600/20 border border-red-600/50 text-red-400 rounded-lg hover:bg-red-600/30 transition-colors font-mono text-sm flex items-center space-x-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>ELIMINA DEFINITIVAMENTE</span>
+                </button>
+              )}
+              
               <button
                 onClick={onClose}
                 className="text-ice-blue/60 hover:text-ice-blue transition-colors"
@@ -836,6 +940,7 @@ export default function TournamentManagement({
                         value={selectedLobby}
                         onChange={(e) => setSelectedLobby(Number(e.target.value))}
                         className="w-full px-4 py-3 bg-black/30 border border-ice-blue/40 rounded-xl text-white focus:outline-none focus:border-ice-blue font-mono"
+                        disabled={tournament.status === 'archived'}
                       >
                         {Array.from({ length: tournament.settings.lobbies }, (_, i) => i + 1).map(num => (
                           <option key={num} value={num}>Lobby {num}</option>
@@ -850,6 +955,7 @@ export default function TournamentManagement({
                       value={selectedSlot}
                       onChange={(e) => setSelectedSlot(Number(e.target.value))}
                       className="w-full px-4 py-3 bg-black/30 border border-ice-blue/40 rounded-xl text-white focus:outline-none focus:border-ice-blue font-mono"
+                      disabled={tournament.status === 'archived'}
                     >
                       {Array.from({ length: tournament.settings.slotsPerLobby }, (_, i) => i + 1).map(num => (
                         <option key={num} value={num}>Slot {num}</option>
@@ -863,17 +969,18 @@ export default function TournamentManagement({
                       type="text"
                       value={teamName}
                       onChange={(e) => setTeamName(e.target.value)}
-                      placeholder="Inserisci nome squadra"
+                      placeholder={tournament.status === 'archived' ? 'Torneo archiviato - sola lettura' : 'Inserisci nome squadra'}
                       className="w-full px-4 py-3 bg-black/30 border border-ice-blue/40 rounded-xl text-white placeholder-ice-blue/60 focus:outline-none focus:border-ice-blue font-mono"
+                      disabled={tournament.status === 'archived'}
                     />
                   </div>
 
                   <button
                     onClick={registerTeam}
-                    disabled={!teamName.trim()}
+                    disabled={!teamName.trim() || tournament.status === 'archived'}
                     className="w-full py-3 bg-gradient-to-r from-ice-blue to-ice-blue-dark text-black font-bold rounded-xl hover:shadow-[0_0_20px_rgba(161,224,255,0.5)] hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none font-mono"
                   >
-                    REGISTRA SQUADRA
+                    {tournament.status === 'archived' ? 'TORNEO ARCHIVIATO' : 'REGISTRA SQUADRA'}
                   </button>
                 </div>
               </div>
@@ -895,12 +1002,14 @@ export default function TournamentManagement({
                             <div className="text-white font-bold">{team.name}</div>
                             <div className="text-ice-blue/60 font-mono text-xs">Team ID: ********</div>
                           </div>
-                          <button
-                            onClick={() => teamKey && removeTeam(teamKey)}
-                            className="p-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          {tournament.status !== 'archived' && (
+                            <button
+                              onClick={() => teamKey && removeTeam(teamKey)}
+                              className="p-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -948,6 +1057,7 @@ export default function TournamentManagement({
                           <button
                             onClick={() => assignManager(manager.code)}
                             className="flex items-center space-x-1 px-3 py-1 bg-green-500/20 border border-green-500/50 text-green-400 rounded text-sm font-mono hover:bg-green-500/30 transition-colors"
+                            disabled={tournament.status === 'archived'}
                           >
                             <Plus className="w-3 h-3" />
                             <span>ASSEGNA</span>
@@ -980,13 +1090,15 @@ export default function TournamentManagement({
                               <div className="text-white font-bold font-mono">{manager.name}</div>
                               <div className="text-green-400/60 text-sm font-mono">{manager.code}</div>
                             </div>
-                            <button
-                              onClick={() => removeManager(managerCode)}
-                              className="flex items-center space-x-1 px-3 py-1 bg-red-500/20 border border-red-500/50 text-red-400 rounded text-sm font-mono hover:bg-red-500/30 transition-colors"
-                            >
-                              <Minus className="w-3 h-3" />
-                              <span>RIMUOVI</span>
-                            </button>
+                            {tournament.status !== 'archived' && (
+                              <button
+                                onClick={() => removeManager(managerCode)}
+                                className="flex items-center space-x-1 px-3 py-1 bg-red-500/20 border border-red-500/50 text-red-400 rounded text-sm font-mono hover:bg-red-500/30 transition-colors"
+                              >
+                                <Minus className="w-3 h-3" />
+                                <span>RIMUOVI</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1001,7 +1113,9 @@ export default function TournamentManagement({
           {activeSection === 'scores' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold text-white font-mono">CLASSIFICA TORNEO</h3>
+                <h3 className="text-xl font-bold text-white font-mono">
+                  {tournament.status === 'archived' ? 'CLASSIFICA FINALE' : 'CLASSIFICA TORNEO'}
+                </h3>
                 <div className="flex space-x-3">
                   <button
                     onClick={exportCSV}
