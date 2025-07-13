@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (import.meta.env.DEV 
     ? 'http://localhost:5000' 
-    : '');
+    : 'https://warzone-tournament-api-xfut.onrender.com'); // ✅ Aggiunto URL server
 
 class ApiService {
   private static async request(endpoint: string, options: RequestInit = {}) {
