@@ -49,7 +49,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO
+  // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO CON FIX TEAMS
   useEffect(() => {
     const loadAllDataWithMultiDeviceSync = async () => {
       try {
@@ -96,14 +96,100 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
             // Extract and process all data
             const tournamentsFromDB = processResult(dbTournaments, 'Tournaments');
-            const teamsFromDB = processResult(dbTeams, 'Teams');
+            
+            // ✅ ENHANCED TEAMS PROCESSING WITH COMPREHENSIVE FORMAT HANDLING
+            const teamsFromDB = (() => {
+              const rawTeams = processResult(dbTeams, 'Teams');
+              console.log('🔧 [TEAMS-SYNC] Raw teams from database:', rawTeams);
+              
+              // Handle different API response formats
+              let teamsData = rawTeams;
+              
+              // Case 1: Response is wrapped (e.g., { teams: [...] } or { data: [...] })
+              if (teamsData && typeof teamsData === 'object') {
+                if (teamsData.teams && Array.isArray(teamsData.teams)) {
+                  console.log('📦 [TEAMS-SYNC] Found teams in .teams property');
+                  teamsData = teamsData.teams;
+                } else if (teamsData.data && Array.isArray(teamsData.data)) {
+                  console.log('📦 [TEAMS-SYNC] Found teams in .data property');
+                  teamsData = teamsData.data;
+                } else if (Array.isArray(teamsData)) {
+                  console.log('📦 [TEAMS-SYNC] Teams data is direct array');
+                } else if (!Array.isArray(teamsData) && Object.keys(teamsData).length > 0) {
+                  console.log('📦 [TEAMS-SYNC] Teams data is already object format');
+                  return teamsData;
+                }
+              }
+              
+              // Case 2: Convert array to object with smart key detection
+              if (Array.isArray(teamsData) && teamsData.length > 0) {
+                console.log(`🔄 [TEAMS-SYNC] Converting ${teamsData.length} teams from array to object`);
+                
+                const teamsObject = teamsData.reduce((acc: any, team: any) => {
+                  console.log('🔍 [TEAMS-SYNC] Processing team:', team);
+                  
+                  // Smart key generation with multiple fallbacks
+                  const possibleKeys = [
+                    team.slotId,
+                    team.lobby,
+                    team._id,
+                    team.id,
+                    // Generate key from tournament + lobby + slot
+                    team.tournamentId && team.lobbyNumber && team.slotNumber 
+                      ? `${team.tournamentId}-Lobby${team.lobbyNumber}-Slot${team.slotNumber}`
+                      : null,
+                    team.tournamentId && team.lobbyNumber 
+                      ? `${team.tournamentId}-Lobby${team.lobbyNumber}-Slot1`
+                      : null,
+                    // Fallback to code-based key
+                    team.code ? `team-${team.code}` : null
+                  ].filter(Boolean);
+                  
+                  const finalKey = possibleKeys[0];
+                  
+                  if (finalKey && team.code && team.name) {
+                    console.log(`✅ [TEAMS-SYNC] Adding team "${team.name}" with key: ${finalKey}`);
+                    
+                    acc[finalKey] = {
+                      ...team,
+                      // Ensure required fields exist
+                      id: team.id || finalKey,
+                      slotId: team.slotId || finalKey,
+                      lobby: team.lobby || finalKey,
+                      // Preserve MongoDB _id if exists
+                      ...(team._id && { _id: team._id })
+                    };
+                  } else {
+                    console.warn('⚠️ [TEAMS-SYNC] Skipping invalid team - missing required fields:', {
+                      key: finalKey,
+                      code: team.code,
+                      name: team.name,
+                      team: team
+                    });
+                  }
+                  
+                  return acc;
+                }, {});
+                
+                console.log(`✅ [TEAMS-SYNC] Successfully converted to object with ${Object.keys(teamsObject).length} teams`);
+                return teamsObject;
+              }
+              
+              // Case 3: Empty or invalid data
+              console.log('📭 [TEAMS-SYNC] No valid teams data found, returning empty object');
+              return {};
+            })();
+
+            console.log('📊 [TEAMS-SYNC] Final teams object:', teamsFromDB);
+            console.log('📊 [TEAMS-SYNC] Teams count from DB:', Object.keys(teamsFromDB).length);
+
             const matchesFromDB = processResult(dbMatches, 'Matches', true);
             const pendingFromDB = processResult(dbPendingSubmissions, 'Pending Submissions', true);
             const adjustmentsFromDB = processResult(dbScoreAdjustments, 'Score Adjustments', true);
             const managersFromDB = processResult(dbManagers, 'Managers');
             const auditLogsFromDB = processResult(dbAuditLogs, 'Audit Logs', true);
 
-            // Check if we have any valid data from database
+            // ✅ ENHANCED DATA VALIDATION CHECK
             const hasValidData = (
               Object.keys(tournamentsFromDB).length > 0 ||
               Object.keys(teamsFromDB).length > 0 ||
@@ -114,12 +200,27 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               auditLogsFromDB.length > 0
             );
 
+            console.log('🔍 [TEAMS-SYNC] Data validation result:', {
+              hasValidData,
+              tournaments: Object.keys(tournamentsFromDB).length,
+              teams: Object.keys(teamsFromDB).length,
+              matches: matchesFromDB.length,
+              pending: pendingFromDB.length,
+              adjustments: adjustmentsFromDB.length,
+              managers: Object.keys(managersFromDB).length,
+              auditLogs: auditLogsFromDB.length
+            });
+
             if (hasValidData) {
               console.log('✅ [MULTI-DEVICE] Database contains data - updating all application states');
               
               // Update ALL states with database data (PRIORITY)
               setTournaments(tournamentsFromDB);
+              
+              // ✅ POST-LOAD VERIFICATION AND FALLBACK FOR TEAMS
+              console.log('🔧 [TEAMS-SYNC] Setting teams state with:', Object.keys(teamsFromDB).length, 'teams');
               setTeams(teamsFromDB);
+
               setMatches(matchesFromDB);
               setPendingSubmissions(pendingFromDB);
               setScoreAdjustments(adjustmentsFromDB);
@@ -134,6 +235,57 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               localStorage.setItem('scoreAdjustments', JSON.stringify(adjustmentsFromDB));
               localStorage.setItem('managers', JSON.stringify(managersFromDB));
               localStorage.setItem('auditLogs', JSON.stringify(auditLogsFromDB));
+
+              // ✅ VERIFY TEAMS LOADED CORRECTLY AND ADD FALLBACK MECHANISM
+              setTimeout(() => {
+                console.log('🔍 [TEAMS-SYNC] Post-load verification...');
+                
+                const currentLocalStorage = localStorage.getItem('teams');
+                const currentState = teamsFromDB;
+                
+                if (currentLocalStorage) {
+                  try {
+                    const localTeams = JSON.parse(currentLocalStorage);
+                    const localCount = Object.keys(localTeams).length;
+                    const stateCount = Object.keys(currentState).length;
+                    
+                    console.log('📊 [TEAMS-SYNC] Comparison:', {
+                      localStorage: localCount,
+                      currentState: stateCount,
+                      shouldSync: localCount > stateCount
+                    });
+                    
+                    // If localStorage has more teams than what we loaded from DB
+                    if (localCount > stateCount && localCount > 0) {
+                      console.log('🔄 [TEAMS-SYNC] localStorage has more teams, using as fallback');
+                      setTeams(localTeams);
+                      
+                      // Try to sync the missing teams to database in background
+                      setTimeout(async () => {
+                        if (typeof ApiService?.syncAllData === 'function') {
+                          try {
+                            console.log('📡 [TEAMS-SYNC] Syncing localStorage teams to database...');
+                            await ApiService.syncAllData({
+                              tournaments: tournamentsFromDB,
+                              teams: localTeams,
+                              matches: matchesFromDB,
+                              pendingSubmissions: pendingFromDB,
+                              scoreAdjustments: adjustmentsFromDB,
+                              managers: managersFromDB,
+                              auditLogs: auditLogsFromDB
+                            });
+                            console.log('✅ [TEAMS-SYNC] Background sync completed');
+                          } catch (syncError: any) {
+                            console.warn('⚠️ [TEAMS-SYNC] Background sync failed:', syncError.message);
+                          }
+                        }
+                      }, 1000);
+                    }
+                  } catch (parseError) {
+                    console.error('❌ [TEAMS-SYNC] Failed to parse localStorage teams:', parseError);
+                  }
+                }
+              }, 500); // Check after 500ms
 
               console.log('✅ [MULTI-DEVICE] Complete multi-device sync successful!');
               console.log('📊 [MULTI-DEVICE] Final data summary:', {
@@ -275,7 +427,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     loadAllDataWithMultiDeviceSync();
   }, []); // Run once on component mount
 
-  // ✅ SINCRONIZZAZIONE PERIODICA MIGLIORATA PER TUTTI I DATI
+  // ✅ SINCRONIZZAZIONE PERIODICA MIGLIORATA CON TEAMS FIX
   useEffect(() => {
     let syncInterval: NodeJS.Timeout;
 
@@ -311,14 +463,60 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             }
           }
 
-          // Check teams for changes
+          // ✅ ENHANCED TEAMS SYNC CHECK WITH PROCESSING
           if (newTeams.status === 'fulfilled' && newTeams.value) {
+            // Process teams with the same logic as initial load
+            const processedTeams = (() => {
+              let teamsData = newTeams.value;
+              
+              // Handle wrapped responses
+              if (teamsData && typeof teamsData === 'object') {
+                if (teamsData.teams && Array.isArray(teamsData.teams)) {
+                  teamsData = teamsData.teams;
+                } else if (teamsData.data && Array.isArray(teamsData.data)) {
+                  teamsData = teamsData.data;
+                } else if (!Array.isArray(teamsData) && Object.keys(teamsData).length > 0) {
+                  return teamsData;
+                }
+              }
+              
+              // Convert array to object if needed
+              if (Array.isArray(teamsData) && teamsData.length > 0) {
+                return teamsData.reduce((acc: any, team: any) => {
+                  const possibleKeys = [
+                    team.slotId,
+                    team.lobby,
+                    team._id,
+                    team.id,
+                    team.tournamentId && team.lobbyNumber 
+                      ? `${team.tournamentId}-Lobby${team.lobbyNumber}-Slot${team.slotNumber || 1}`
+                      : null,
+                    team.code ? `team-${team.code}` : null
+                  ].filter(Boolean);
+                  
+                  const finalKey = possibleKeys[0];
+                  if (finalKey && team.code && team.name) {
+                    acc[finalKey] = {
+                      ...team,
+                      id: team.id || finalKey,
+                      slotId: team.slotId || finalKey,
+                      lobby: team.lobby || finalKey,
+                      ...(team._id && { _id: team._id })
+                    };
+                  }
+                  return acc;
+                }, {});
+              }
+              
+              return {};
+            })();
+
             const currentTeamsStr = JSON.stringify(teams);
-            const newTeamsStr = JSON.stringify(newTeams.value);
+            const newTeamsStr = JSON.stringify(processedTeams);
             
             if (currentTeamsStr !== newTeamsStr) {
               console.log('🔄 [MULTI-DEVICE] Team changes detected');
-              setTeams(newTeams.value);
+              setTeams(processedTeams);
               localStorage.setItem('teams', newTeamsStr);
               hasChanges = true;
             }
@@ -1325,7 +1523,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             © 2025 BM Solution - Sviluppo Applicazioni
           </div>
           <div className="text-xs text-ice-blue/30 font-mono mt-1">
-            Advanced Tournament Management System v4.0 - Multi-Device Sync
+            Advanced Tournament Management System v4.1 - Multi-Device Sync with Teams Fix
           </div>
         </div>
       </div>
