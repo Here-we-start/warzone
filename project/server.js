@@ -526,8 +526,29 @@ app.get('/api/tournaments/:id', async (req, res) => {
 // Create tournament with validation
 app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async (req, res) => {
   try {
+    console.log('📝 ===== TOURNAMENT CREATION DEBUG =====');
+    console.log('📄 Request body:', JSON.stringify(req.body, null, 2));
+    console.log('🔗 MongoDB connection state:', mongoose.connection.readyState);
+    console.log('📊 Database name:', mongoose.connection.name);
+    
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.error('❌ MongoDB not connected! State:', mongoose.connection.readyState);
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Database not connected',
+        mongoState: mongoose.connection.readyState
+      });
+    }
+    
+    console.log('🏗️ Creating Tournament object...');
     const tournament = new Tournament(req.body);
+    console.log('🏗️ Tournament object created successfully');
+    console.log('🏗️ Tournament object data:', JSON.stringify(tournament.toObject(), null, 2));
+    
+    console.log('💾 Attempting to save tournament to MongoDB...');
     await tournament.save();
+    console.log('✅ Tournament saved successfully! ID:', tournament._id);
     
     logger.info('Tournament created', { 
       tournamentId: tournament._id, 
@@ -546,8 +567,36 @@ app.post('/api/tournaments', tournamentValidation, handleValidationErrors, async
     
     res.json({ success: true, tournament });
   } catch (error) {
+    console.error('❌ ===== DETAILED ERROR ANALYSIS =====');
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error name:', error.name);
+    console.error('❌ Error code:', error.code);
+    console.error('❌ Error stack:', error.stack);
+    
+    if (error.name === 'ValidationError') {
+      console.error('❌ Validation errors:');
+      Object.keys(error.errors || {}).forEach(key => {
+        console.error(`❌   Field: ${key}, Message: ${error.errors[key].message}`);
+      });
+    }
+    
+    if (error.name === 'MongoServerError') {
+      console.error('❌ MongoDB error details:', {
+        code: error.code,
+        codeName: error.codeName,
+        keyPattern: error.keyPattern,
+        keyValue: error.keyValue
+      });
+    }
+    
     logger.error('Create tournament error', { error: error.message, ip: req.ip });
-    res.status(500).json({ success: false, error: 'Failed to create tournament' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to create tournament',
+      details: error.message,
+      errorType: error.name,
+      errorCode: error.code
+    });
   }
 });
 
