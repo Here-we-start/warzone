@@ -102,6 +102,18 @@ class ApiService {
     });
   }
 
+  static async getAllTeams() {
+    console.log('📡 [API] Fetching ALL teams for multi-device sync...');
+    try {
+      const result = await this.request('/api/teams');
+      console.log('✅ [API] All teams fetched successfully:', Object.keys(result.teams || {}).length, 'teams');
+      return result.teams || {};
+    } catch (error) {
+      console.error('❌ [API] Error fetching all teams:', error);
+      throw error;
+    }
+  }
+
   // Match endpoints
   static async getMatches(tournamentId: string) {
     return this.request(`/api/tournaments/${tournamentId}/matches`);
