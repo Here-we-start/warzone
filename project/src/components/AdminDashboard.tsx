@@ -91,7 +91,57 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     console.log('🔍 [DEBUG] === FINE DIAGNOSTICA ===');
   };
 
-  // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO CON FIX TEAMS
+  // ✅ HELPER FUNCTION - FIX API MANAGERS FORMAT
+  const fixManagersApiCall = async () => {
+    try {
+      console.log('📡 [MANAGER-DB] Attempting to call API with different formats...');
+      
+      // Prova diversi formati per l'API managers
+      const apiAttempts = [
+        () => ApiService.getAllManagers?.(),
+        () => fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        }).then(res => res.ok ? res.json() : undefined),
+        () => ApiService.get?.('/api/managers'),
+        () => ApiService.request?.('GET', '/api/managers')
+      ];
+
+      for (let i = 0; i < apiAttempts.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-DB] Trying API method ${i + 1}...`);
+          const result = await apiAttempts[i]();
+          
+          if (result !== undefined && result !== null) {
+            console.log(`✅ [MANAGER-DB] API method ${i + 1} successful:`, result);
+            
+            // Normalizza il formato (potrebbe essere array o object)
+            if (Array.isArray(result)) {
+              return result.reduce((acc, manager) => {
+                if (manager.code) {
+                  acc[manager.code] = manager;
+                }
+                return acc;
+              }, {});
+            }
+            
+            return result;
+          }
+        } catch (methodError) {
+          console.log(`⚠️ [MANAGER-DB] API method ${i + 1} failed:`, methodError.message);
+        }
+      }
+      
+      console.warn('⚠️ [MANAGER-DB] All API methods failed');
+      return null;
+      
+    } catch (error) {
+      console.error('❌ [MANAGER-DB] Error in API fix attempt:', error);
+      return null;
+    }
+  };
+
+  // ✅ SISTEMA COMPLETO DI CARICAMENTO MULTI-DISPOSITIVO CON FIX TEAMS E MANAGERS
   useEffect(() => {
     const loadAllDataWithMultiDeviceSync = async () => {
       try {
@@ -228,8 +278,57 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             const matchesFromDB = processResult(dbMatches, 'Matches', true);
             const pendingFromDB = processResult(dbPendingSubmissions, 'Pending Submissions', true);
             const adjustmentsFromDB = processResult(dbScoreAdjustments, 'Score Adjustments', true);
-            const managersFromDB = processResult(dbManagers, 'Managers');
             const auditLogsFromDB = processResult(dbAuditLogs, 'Audit Logs', true);
+
+            // ✅ ENHANCED MANAGERS LOADING WITH DATABASE + LOCALSTORAGE
+            const managersFromDB = await (async () => {
+              console.log('🔄 [MANAGERS] Enhanced loading: Database + localStorage...');
+              
+              // Prova a caricare dal database con fix API
+              const databaseManagers = await fixManagersApiCall();
+              
+              // Carica anche da localStorage
+              const localManagers = (() => {
+                const stored = localStorage.getItem('managers');
+                if (stored) {
+                  try {
+                    return JSON.parse(stored);
+                  } catch (error) {
+                    console.error('❌ [MANAGERS] Error parsing localStorage:', error);
+                  }
+                }
+                return {};
+              })();
+
+              console.log('📊 [MANAGERS] Sources:', {
+                database: databaseManagers ? Object.keys(databaseManagers).length : 0,
+                localStorage: Object.keys(localManagers).length
+              });
+
+              // Usa il più recente o il più completo
+              if (databaseManagers && Object.keys(databaseManagers).length > 0) {
+                if (Object.keys(localManagers).length > 0) {
+                  // Merge intelligente: prendi il più recente
+                  const mergedManagers = { ...localManagers, ...databaseManagers };
+                  console.log('✅ [MANAGERS] Using merged data (DB priority):', Object.keys(mergedManagers).length);
+                  
+                  // Aggiorna localStorage con i dati merged
+                  localStorage.setItem('managers', JSON.stringify(mergedManagers));
+                  
+                  return mergedManagers;
+                } else {
+                  console.log('✅ [MANAGERS] Using database data:', Object.keys(databaseManagers).length);
+                  localStorage.setItem('managers', JSON.stringify(databaseManagers));
+                  return databaseManagers;
+                }
+              } else if (Object.keys(localManagers).length > 0) {
+                console.log('✅ [MANAGERS] Using localStorage data (database unavailable):', Object.keys(localManagers).length);
+                return localManagers;
+              } else {
+                console.log('📭 [MANAGERS] No data found in database or localStorage');
+                return {};
+              }
+            })();
 
             // ✅ ENHANCED DATA VALIDATION CHECK
             const hasValidData = (
@@ -278,67 +377,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               localStorage.setItem('managers', JSON.stringify(managersFromDB));
               localStorage.setItem('auditLogs', JSON.stringify(auditLogsFromDB));
 
-              // ✅ VERIFY TEAMS LOADED CORRECTLY AND ADD FALLBACK MECHANISM
-              setTimeout(() => {
-                console.log('🔍 [TEAMS-SYNC] Post-load verification...');
-                
-                const currentLocalStorage = localStorage.getItem('teams');
-                const currentState = teamsFromDB;
-                
-                if (currentLocalStorage) {
-                  try {
-                    const localTeams = JSON.parse(currentLocalStorage);
-                    const localCount = Object.keys(localTeams).length;
-                    const stateCount = Object.keys(currentState).length;
-                    
-                    console.log('📊 [TEAMS-SYNC] Comparison:', {
-                      localStorage: localCount,
-                      currentState: stateCount,
-                      shouldSync: localCount > stateCount
-                    });
-                    
-                    // If localStorage has more teams than what we loaded from DB
-                    if (localCount > stateCount && localCount > 0) {
-                      console.log('🔄 [TEAMS-SYNC] localStorage has more teams, using as fallback');
-                      setTeams(localTeams);
-                      
-                      // Try to sync the missing teams to database in background
-                      setTimeout(async () => {
-                        if (typeof ApiService?.syncAllData === 'function') {
-                          try {
-                            console.log('📡 [TEAMS-SYNC] Syncing localStorage teams to database...');
-                            await ApiService.syncAllData({
-                              tournaments: tournamentsFromDB,
-                              teams: localTeams,
-                              matches: matchesFromDB,
-                              pendingSubmissions: pendingFromDB,
-                              scoreAdjustments: adjustmentsFromDB,
-                              managers: managersFromDB,
-                              auditLogs: auditLogsFromDB
-                            });
-                            console.log('✅ [TEAMS-SYNC] Background sync completed');
-                          } catch (syncError: any) {
-                            console.warn('⚠️ [TEAMS-SYNC] Background sync failed:', syncError.message);
-                          }
-                        }
-                      }, 1000);
-                    }
-                  } catch (parseError) {
-                    console.error('❌ [TEAMS-SYNC] Failed to parse localStorage teams:', parseError);
-                  }
-                }
-              }, 500); // Check after 500ms
-
               console.log('✅ [MULTI-DEVICE] Complete multi-device sync successful!');
-              console.log('📊 [MULTI-DEVICE] Final data summary:', {
-                tournaments: Object.keys(tournamentsFromDB).length,
-                teams: Object.keys(teamsFromDB).length,
-                matches: matchesFromDB.length,
-                pendingSubmissions: pendingFromDB.length,
-                scoreAdjustments: adjustmentsFromDB.length,
-                managers: Object.keys(managersFromDB).length,
-                auditLogs: auditLogsFromDB.length
-              });
               
               setIsInitialLoading(false);
               return; // SUCCESS - database data loaded
@@ -431,29 +470,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
         if (hasLocalData) {
           console.log('✅ [MULTI-DEVICE] Fallback data loaded from localStorage');
-          
-          // Try to sync localStorage data to database in background (for offline-first scenarios)
-          if (typeof ApiService?.syncAllData === 'function') {
-            console.log('🔄 [MULTI-DEVICE] Attempting background sync of local data to database...');
-            setTimeout(async () => {
-              try {
-                const allLocalData = {
-                  tournaments: localTournaments ? JSON.parse(localTournaments) : {},
-                  teams: localTeams ? JSON.parse(localTeams) : {},
-                  matches: localMatches ? JSON.parse(localMatches) : [],
-                  pendingSubmissions: localPendingSubmissions ? JSON.parse(localPendingSubmissions) : [],
-                  scoreAdjustments: localScoreAdjustments ? JSON.parse(localScoreAdjustments) : [],
-                  managers: localManagers ? JSON.parse(localManagers) : {},
-                  auditLogs: localAuditLogs ? JSON.parse(localAuditLogs) : []
-                };
-                
-                await ApiService.syncAllData(allLocalData);
-                console.log('✅ [MULTI-DEVICE] Background sync to database completed');
-              } catch (syncError: any) {
-                console.warn('⚠️ [MULTI-DEVICE] Background sync failed:', syncError.message);
-              }
-            }, 3000); // Wait 3 seconds before attempting background sync
-          }
         } else {
           console.log('📭 [MULTI-DEVICE] No data found - fresh installation');
         }
@@ -550,7 +566,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             ApiService.getAllMatches?.() || Promise.resolve([]),
             ApiService.getAllPendingSubmissions?.() || Promise.resolve([]),
             ApiService.getAllScoreAdjustments?.() || Promise.resolve([]),
-            ApiService.getAllManagers?.() || Promise.resolve({})
+            fixManagersApiCall() || Promise.resolve({})
           ]);
 
           let hasChanges = false;
@@ -666,7 +682,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             }
           }
 
-          // Check managers for changes
+          // ✅ ENHANCED MANAGERS SYNC CHECK
           if (newManagers.status === 'fulfilled' && newManagers.value) {
             const currentManagersStr = JSON.stringify(managers);
             const newManagersStr = JSON.stringify(newManagers.value);
@@ -706,6 +722,92 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     
     return () => clearTimeout(debugTimer);
   }, []); // Esegui solo una volta
+
+  // ✅ ENHANCED MULTI-DEVICE SYNC FOR MANAGERS
+  useEffect(() => {
+    console.log('🔄 [MANAGER-SYNC] Setting up enhanced cross-device synchronization...');
+
+    // ✅ SYNC FROM DATABASE EVERY 30 SECONDS
+    const databaseSyncInterval = setInterval(async () => {
+      try {
+        console.log('🔄 [MANAGER-SYNC] Periodic database sync check...');
+        
+        const databaseManagers = await fixManagersApiCall();
+        
+        if (databaseManagers && Object.keys(databaseManagers).length > 0) {
+          const currentManagersStr = JSON.stringify(managers);
+          const databaseManagersStr = JSON.stringify(databaseManagers);
+          
+          if (currentManagersStr !== databaseManagersStr) {
+            console.log('🔄 [MANAGER-SYNC] Database has newer managers, syncing...');
+            setManagers(databaseManagers);
+            localStorage.setItem('managers', JSON.stringify(databaseManagers));
+            console.log('✅ [MANAGER-SYNC] Synced from database:', Object.keys(databaseManagers).length, 'managers');
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ [MANAGER-SYNC] Database sync check failed (probably offline)');
+      }
+    }, 30000); // Ogni 30 secondi
+
+    // ✅ LISTENER PER EVENTI CUSTOM
+    const handleManagerSync = (event: CustomEvent) => {
+      console.log('📡 [MANAGER-SYNC] Received sync event:', event.detail);
+      
+      const { managers: updatedManagers, action, managerCode, timestamp } = event.detail;
+      
+      // Evita loop infiniti controllando timestamp
+      const lastSyncTime = parseInt(localStorage.getItem('lastManagerSync') || '0');
+      if (timestamp && timestamp <= lastSyncTime) {
+        console.log('🔄 [MANAGER-SYNC] Ignoring old sync event');
+        return;
+      }
+      
+      localStorage.setItem('lastManagerSync', timestamp?.toString() || Date.now().toString());
+      
+      const currentManagersStr = JSON.stringify(managers);
+      const newManagersStr = JSON.stringify(updatedManagers);
+      
+      if (currentManagersStr !== newManagersStr) {
+        console.log(`🔄 [MANAGER-SYNC] Applying ${action} for manager: ${managerCode}`);
+        setManagers(updatedManagers);
+        localStorage.setItem('managers', JSON.stringify(updatedManagers));
+        console.log('✅ [MANAGER-SYNC] Cross-device sync completed');
+      }
+    };
+
+    // ✅ LISTENER PER STORAGE EVENTS (tra tab)
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'managers' && event.newValue) {
+        try {
+          console.log('🔄 [MANAGER-SYNC] Storage change detected from other tab...');
+          const newManagers = JSON.parse(event.newValue);
+          
+          const currentManagersStr = JSON.stringify(managers);
+          const newManagersStr = JSON.stringify(newManagers);
+          
+          if (currentManagersStr !== newManagersStr) {
+            console.log('✅ [MANAGER-SYNC] Syncing managers from other tab');
+            setManagers(newManagers);
+          }
+        } catch (error) {
+          console.error('❌ [MANAGER-SYNC] Error parsing storage change:', error);
+        }
+      }
+    };
+
+    // ✅ REGISTRA LISTENER
+    window.addEventListener('managersUpdated', handleManagerSync as EventListener);
+    window.addEventListener('storage', handleStorageChange);
+
+    // ✅ CLEANUP
+    return () => {
+      window.removeEventListener('managersUpdated', handleManagerSync as EventListener);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(databaseSyncInterval);
+      console.log('🔄 [MANAGER-SYNC] Enhanced cross-device sync stopped');
+    };
+  }, [managers]);
 
   // ✅ APPROVE SUBMISSION WITH MULTI-DEVICE SYNC
   const approveSubmission = async (submissionId: string) => {
@@ -949,9 +1051,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
   };
 
-  // ✅ NUOVE FUNZIONI MANAGER CON DATABASE SYNC
+  // ✅ ENHANCED MANAGER FUNCTIONS WITH DATABASE + LOCALSTORAGE
 
-  // CREATE MANAGER WITH DATABASE SYNC
+  // CREATE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
   const createManagerWithSync = async (managerData: Omit<Manager, 'id' | 'createdAt'>) => {
     const newManager: Manager = {
       ...managerData,
@@ -959,152 +1061,100 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       createdAt: Date.now()
     };
 
-    console.log('🔄 [MANAGER-SYNC] Creating manager with database sync...', newManager);
+    console.log('🔄 [MANAGER-SYNC] Creating manager with database-first approach...', newManager);
+
+    let databaseSuccess = false;
+    let localStorageSuccess = false;
 
     try {
-      // Update database first
-      if (typeof ApiService?.createManager === 'function') {
-        await ApiService.createManager(newManager);
-        console.log('✅ [MANAGER-SYNC] Manager created in database');
+      // ✅ STEP 1: PROVA DATABASE PRIMA DI TUTTO
+      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database save...');
+      
+      // Prova diversi metodi API
+      const apiMethods = [
+        // Metodo 1: ApiService standard
+        async () => {
+          if (typeof ApiService?.createManager === 'function') {
+            return await ApiService.createManager(newManager);
+          }
+          throw new Error('createManager method not available');
+        },
+        
+        // Metodo 2: Fetch diretto
+        async () => {
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newManager)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return response.ok;
+        }
+      ];
+
+      for (let i = 0; i < deleteMethods.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-SYNC] Trying delete method ${i + 1}...`);
+          await deleteMethods[i]();
+          console.log(`✅ [MANAGER-SYNC] Database deletion successful (method ${i + 1})`);
+          databaseSuccess = true;
+          break;
+        } catch (methodError: any) {
+          console.log(`⚠️ [MANAGER-SYNC] Delete method ${i + 1} failed:`, methodError.message);
+        }
       }
 
-      // Update local state
-      setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
-
-      // Update localStorage
-      const updatedManagers = { ...managers, [newManager.code]: newManager };
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
-
-      console.log('✅ [MANAGER-SYNC] Manager synced across all devices');
-
-      // Log action
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'MANAGER_CREATED',
-        `Gestore creato: ${newManager.name} (${newManager.code})`,
-        'admin',
-        'admin',
-        { managerCode: newManager.code, permissions: newManager.permissions }
-      );
-
-      return newManager;
-
-    } catch (error: any) {
-      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
-      
-      // Fallback: update locally even if database fails
-      setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
-      
-      // Update localStorage
-      const updatedManagers = { ...managers, [newManager.code]: newManager };
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
-      
-      return newManager;
-    }
-  };
-
-  // UPDATE MANAGER WITH DATABASE SYNC
-  const updateManagerWithSync = async (managerCode: string, updateData: Partial<Manager>) => {
-    const existingManager = managers[managerCode];
-    if (!existingManager) return;
-
-    const updatedManager = { ...existingManager, ...updateData };
-
-    console.log('🔄 [MANAGER-SYNC] Updating manager with database sync...', updatedManager);
-
-    try {
-      // Update database first
-      if (typeof ApiService?.updateManager === 'function') {
-        await ApiService.updateManager(existingManager.id, updatedManager);
-        console.log('✅ [MANAGER-SYNC] Manager updated in database');
-      }
-
-      // Update local state
-      setManagers(prev => ({ ...prev, [managerCode]: updatedManager }));
-
-      // Update localStorage
-      const updatedManagers = { ...managers, [managerCode]: updatedManager };
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
-
-      console.log('✅ [MANAGER-SYNC] Manager update synced across all devices');
-
-      // Log action
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'MANAGER_UPDATED',
-        `Gestore aggiornato: ${updatedManager.name} (${updatedManager.code})`,
-        'admin',
-        'admin',
-        { managerCode: updatedManager.code, changes: updateData }
-      );
-
-    } catch (error: any) {
-      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
-      
-      // Fallback: update locally even if database fails
-      setManagers(prev => ({ ...prev, [managerCode]: updatedManager }));
-      
-      // Update localStorage
-      const updatedManagers = { ...managers, [managerCode]: updatedManager };
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
-    }
-  };
-
-  // DELETE MANAGER WITH DATABASE SYNC
-  const deleteManagerWithSync = async (managerCode: string) => {
-    const existingManager = managers[managerCode];
-    if (!existingManager) return;
-
-    console.log('🔄 [MANAGER-SYNC] Deleting manager with database sync...', managerCode);
-
-    try {
-      // Update database first
-      if (typeof ApiService?.deleteManager === 'function') {
-        await ApiService.deleteManager(existingManager.id);
-        console.log('✅ [MANAGER-SYNC] Manager deleted from database');
-      }
-
-      // Update local state
+      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
       setManagers(prev => {
         const updated = { ...prev };
         delete updated[managerCode];
+        console.log('✅ [MANAGER-SYNC] Local state updated, manager deleted:', managerCode);
         return updated;
       });
 
-      // Update localStorage
-      const updatedManagers = { ...managers };
-      delete updatedManagers[managerCode];
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
+      const currentManagers = { ...managers };
+      delete currentManagers[managerCode];
+      localStorage.setItem('managers', JSON.stringify(currentManagers));
+      localStorageSuccess = true;
+      console.log('✅ [MANAGER-SYNC] localStorage deletion successful');
 
-      console.log('✅ [MANAGER-SYNC] Manager deletion synced across all devices');
+      // ✅ STEP 4: BROADCAST SYNC
+      const syncEvent = new CustomEvent('managersUpdated', {
+        detail: { 
+          managers: currentManagers, 
+          action: 'deleted', 
+          managerCode,
+          databaseSuccess,
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(syncEvent);
 
-      // Log action
+      // ✅ STEP 5: LOG ACTION
       logAction(
         auditLogs,
         setAuditLogs,
         'MANAGER_DELETED',
-        `Gestore eliminato: ${existingManager.name} (${existingManager.code})`,
+        `Gestore eliminato: ${existingManager.name} (${existingManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}`,
         'admin',
         'admin',
-        { managerCode: existingManager.code }
+        { 
+          managerCode: existingManager.code,
+          databaseSuccess,
+          localStorageSuccess
+        }
       );
 
+      console.log(`✅ [MANAGER-SYNC] Manager deletion completed - DB: ${databaseSuccess}, Local: ${localStorageSuccess}`);
+
     } catch (error: any) {
-      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
-      
-      // Fallback: update locally even if database fails
-      setManagers(prev => {
-        const updated = { ...prev };
-        delete updated[managerCode];
-        return updated;
-      });
-      
-      // Update localStorage
-      const updatedManagers = { ...managers };
-      delete updatedManagers[managerCode];
-      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+      console.error('❌ [MANAGER-SYNC] Error deleting manager:', error);
+      alert(`Errore nell'eliminazione del gestore: ${error.message}`);
     }
   };
 
@@ -1230,22 +1280,22 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               </button>
 
               <button
-  onClick={async () => {
-    try {
-      console.log('🔍 [DEBUG] Testing GET /api/managers...');
-      const result = await ApiService.getAllManagers?.();
-      console.log('✅ [DEBUG] GET managers result:', result);
-      console.log('✅ [DEBUG] Managers count:', result ? Object.keys(result).length : 0);
-      console.log('✅ [DEBUG] Type of result:', typeof result);
-      console.log('✅ [DEBUG] Is array?', Array.isArray(result));
-    } catch (error) {
-      console.error('❌ [DEBUG] GET managers failed:', error);
-    }
-  }}
-  className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
->
-  🔍 TEST MANAGERS
-</button>
+                onClick={async () => {
+                  try {
+                    console.log('🔍 [DEBUG] Testing GET /api/managers...');
+                    const result = await ApiService.getAllManagers?.();
+                    console.log('✅ [DEBUG] GET managers result:', result);
+                    console.log('✅ [DEBUG] Managers count:', result ? Object.keys(result).length : 0);
+                    console.log('✅ [DEBUG] Type of result:', typeof result);
+                    console.log('✅ [DEBUG] Is array?', Array.isArray(result));
+                  } catch (error) {
+                    console.error('❌ [DEBUG] GET managers failed:', error);
+                  }
+                }}
+                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
+              >
+                🔍 TEST MANAGERS
+              </button>
               
               <button
                 onClick={() => setShowTournamentCreator(true)}
@@ -1808,4 +1858,283 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       )}
     </div>
   );
-}
+}.status}: ${response.statusText}`);
+          }
+          
+          return await response.json();
+        },
+        
+        // Metodo 3: Format semplificato
+        async () => {
+          const simplifiedManager = {
+            name: newManager.name,
+            code: newManager.code,
+            permissions: newManager.permissions,
+            isActive: newManager.isActive,
+            createdBy: newManager.createdBy
+          };
+          
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(simplifiedManager)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return await response.json();
+        }
+      ];
+
+      // Prova tutti i metodi API
+      for (let i = 0; i < apiMethods.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-SYNC] Trying API method ${i + 1} for creation...`);
+          await apiMethods[i]();
+          console.log(`✅ [MANAGER-SYNC] Database save successful (method ${i + 1})`);
+          databaseSuccess = true;
+          break;
+        } catch (methodError: any) {
+          console.log(`⚠️ [MANAGER-SYNC] API method ${i + 1} failed:`, methodError.message);
+          
+          // Se è l'ultimo metodo e fallisce
+          if (i === apiMethods.length - 1) {
+            console.warn('⚠️ [MANAGER-SYNC] All database methods failed, proceeding with localStorage');
+          }
+        }
+      }
+
+      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
+      console.log('🔄 [MANAGER-SYNC] Step 2: Updating local state...');
+      setManagers(prev => {
+        const updated = { ...prev, [newManager.code]: newManager };
+        console.log('✅ [MANAGER-SYNC] Local state updated:', Object.keys(updated).length, 'managers');
+        return updated;
+      });
+
+      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
+      console.log('🔄 [MANAGER-SYNC] Step 3: Saving to localStorage...');
+      const currentManagers = { ...managers, [newManager.code]: newManager };
+      localStorage.setItem('managers', JSON.stringify(currentManagers));
+      
+      // Verifica salvataggio
+      const verification = localStorage.getItem('managers');
+      if (verification) {
+        const parsed = JSON.parse(verification);
+        if (parsed[newManager.code]) {
+          localStorageSuccess = true;
+          console.log('✅ [MANAGER-SYNC] localStorage save successful');
+        }
+      }
+
+      // ✅ STEP 4: BROADCAST PER MULTI-DEVICE SYNC
+      console.log('🔄 [MANAGER-SYNC] Step 4: Broadcasting sync event...');
+      const syncEvent = new CustomEvent('managersUpdated', {
+        detail: { 
+          managers: currentManagers, 
+          action: 'created', 
+          managerCode: newManager.code,
+          databaseSuccess,
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(syncEvent);
+
+      // ✅ STEP 5: LOG ACTION
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_CREATED',
+        `Gestore creato: ${newManager.name} (${newManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}, Local: ${localStorageSuccess ? 'OK' : 'FAIL'}`,
+        'admin',
+        'admin',
+        { 
+          managerCode: newManager.code, 
+          permissions: newManager.permissions,
+          databaseSuccess,
+          localStorageSuccess
+        }
+      );
+
+      // ✅ STEP 6: RISULTATO FINALE
+      if (databaseSuccess && localStorageSuccess) {
+        console.log('🎉 [MANAGER-SYNC] Manager created successfully (Database + localStorage)');
+      } else if (localStorageSuccess) {
+        console.log('⚠️ [MANAGER-SYNC] Manager created with localStorage only (Database failed)');
+        
+        // Schedule retry per database
+        setTimeout(async () => {
+          console.log('🔄 [MANAGER-SYNC] Retrying database save...');
+          try {
+            await apiMethods[0](); // Retry con metodo principale
+            console.log('✅ [MANAGER-SYNC] Delayed database save successful');
+          } catch (retryError) {
+            console.log('⚠️ [MANAGER-SYNC] Delayed database save still failed');
+          }
+        }, 10000); // Retry dopo 10 secondi
+        
+      } else {
+        throw new Error('Both database and localStorage failed');
+      }
+
+      return newManager;
+
+    } catch (error: any) {
+      console.error('❌ [MANAGER-SYNC] Critical error in manager creation:', error);
+      
+      // Ultimo tentativo: almeno localStorage
+      if (!localStorageSuccess) {
+        try {
+          const currentManagers = { ...managers, [newManager.code]: newManager };
+          localStorage.setItem('managers', JSON.stringify(currentManagers));
+          setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
+          console.log('🆘 [MANAGER-SYNC] Emergency localStorage save successful');
+          return newManager;
+        } catch (emergencyError) {
+          console.error('💥 [MANAGER-SYNC] Emergency save also failed:', emergencyError);
+        }
+      }
+      
+      alert(`Errore nella creazione del gestore: ${error.message}\n\nDatabase: ${databaseSuccess ? 'OK' : 'FALLITO'}\nLocal: ${localStorageSuccess ? 'OK' : 'FALLITO'}`);
+      throw error;
+    }
+  };
+
+  // UPDATE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
+  const updateManagerWithSync = async (managerCode: string, updateData: Partial<Manager>) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) {
+      console.warn('⚠️ [MANAGER-SYNC] Manager not found for update:', managerCode);
+      return;
+    }
+
+    const updatedManager = { ...existingManager, ...updateData };
+    console.log('🔄 [MANAGER-SYNC] Updating manager with database-first approach...', updatedManager);
+
+    let databaseSuccess = false;
+    let localStorageSuccess = false;
+
+    try {
+      // ✅ STEP 1: PROVA DATABASE
+      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database update...');
+      
+      const updateMethods = [
+        async () => {
+          if (typeof ApiService?.updateManager === 'function') {
+            return await ApiService.updateManager(existingManager.id, updatedManager);
+          }
+          throw new Error('updateManager method not available');
+        },
+        
+        async () => {
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedManager)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return await response.json();
+        }
+      ];
+
+      for (let i = 0; i < updateMethods.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-SYNC] Trying update method ${i + 1}...`);
+          await updateMethods[i]();
+          console.log(`✅ [MANAGER-SYNC] Database update successful (method ${i + 1})`);
+          databaseSuccess = true;
+          break;
+        } catch (methodError: any) {
+          console.log(`⚠️ [MANAGER-SYNC] Update method ${i + 1} failed:`, methodError.message);
+        }
+      }
+
+      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
+      setManagers(prev => {
+        const updated = { ...prev, [managerCode]: updatedManager };
+        console.log('✅ [MANAGER-SYNC] Local state updated for manager:', managerCode);
+        return updated;
+      });
+
+      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
+      const currentManagers = { ...managers, [managerCode]: updatedManager };
+      localStorage.setItem('managers', JSON.stringify(currentManagers));
+      localStorageSuccess = true;
+      console.log('✅ [MANAGER-SYNC] localStorage update successful');
+
+      // ✅ STEP 4: BROADCAST SYNC
+      const syncEvent = new CustomEvent('managersUpdated', {
+        detail: { 
+          managers: currentManagers, 
+          action: 'updated', 
+          managerCode,
+          changes: updateData,
+          databaseSuccess,
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(syncEvent);
+
+      // ✅ STEP 5: LOG ACTION
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_UPDATED',
+        `Gestore aggiornato: ${updatedManager.name} (${updatedManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}`,
+        'admin',
+        'admin',
+        { 
+          managerCode: updatedManager.code, 
+          changes: updateData,
+          databaseSuccess,
+          localStorageSuccess
+        }
+      );
+
+      console.log(`✅ [MANAGER-SYNC] Manager update completed - DB: ${databaseSuccess}, Local: ${localStorageSuccess}`);
+
+    } catch (error: any) {
+      console.error('❌ [MANAGER-SYNC] Error updating manager:', error);
+      alert(`Errore nell'aggiornamento del gestore: ${error.message}`);
+    }
+  };
+
+  // DELETE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
+  const deleteManagerWithSync = async (managerCode: string) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) {
+      console.warn('⚠️ [MANAGER-SYNC] Manager not found for deletion:', managerCode);
+      return;
+    }
+
+    console.log('🔄 [MANAGER-SYNC] Deleting manager with database-first approach...', managerCode);
+
+    let databaseSuccess = false;
+    let localStorageSuccess = false;
+
+    try {
+      // ✅ STEP 1: PROVA DATABASE
+      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database deletion...');
+      
+      const deleteMethods = [
+        async () => {
+          if (typeof ApiService?.deleteManager === 'function') {
+            return await ApiService.deleteManager(existingManager.id);
+          }
+          throw new Error('deleteManager method not available');
+        },
+        
+        async () => {
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response
