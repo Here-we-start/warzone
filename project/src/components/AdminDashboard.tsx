@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, Key, Bell, AlertTriangle, Menu, X, Archive, UserPlus, Eye, Shield, Plus, Play, Copy, Tv, Upload } from 'lucide-react';
+import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, Key, Bell, AlertTriangle, Menu, X, Archive, UserPlus, Eye, Shield, Plus, Play, Copy, Tv, Upload, Target } from 'lucide-react';
 import GlassPanel from './GlassPanel';
 import TournamentCreator from './TournamentCreator';
 import MultiplierSettings from './MultiplierSettings';
@@ -12,6 +12,7 @@ import AuditLogViewer from './AuditLogViewer';
 import TournamentArchive from './TournamentArchive';
 import TournamentManagement from './TournamentManagement';
 import OBSPluginManager from './OBSPluginManager';
+import ManualScoreAssignment from './ManualScoreAssignment';
 import { useRealTimeData } from '../hooks/useRealTimeData';
 import { Team, Match, TeamStats, PendingSubmission, ScoreAdjustment, Manager, AuditLog, Tournament } from '../types';
 import { generateUniqueTeamCode } from '../utils/teamCodeGenerator';
@@ -46,10 +47,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showLoginCodes, setShowLoginCodes] = useState(false);
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
   const [showManualSubmission, setShowManualSubmission] = useState(false);
+  const [showScoreAssignment, setShowScoreAssignment] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // ✅ FUNZIONE DI DEBUG TEMPORANEA - POSIZIONE 1
+  // ✅ FUNZIONE DI DEBUG TEMPORANEA
   const debugDatabaseConnection = async () => {
     console.log('🔍 [DEBUG] === DIAGNOSTICA COMPLETA DATABASE ===');
     
@@ -470,67 +472,67 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   }, []); // Run once on component mount
 
   // ✅ HOOK DEDICATO PER SINCRONIZZAZIONE TEAMS TRA DISPOSITIVI
-useEffect(() => {
-  const syncTeamsAcrossDevices = async () => {
-    if (typeof ApiService?.getAllTeams === 'function') {
-      try {
-        console.log('🔄 [DEVICE-SYNC] Syncing teams across devices...');
-        const serverTeams = await ApiService.getAllTeams();
-        
-        if (serverTeams) {
-          // Gestisce diversi formati di risposta
-          let teamsData = serverTeams;
-          if (serverTeams.teams) teamsData = serverTeams.teams;
-          if (serverTeams.data) teamsData = serverTeams.data;
+  useEffect(() => {
+    const syncTeamsAcrossDevices = async () => {
+      if (typeof ApiService?.getAllTeams === 'function') {
+        try {
+          console.log('🔄 [DEVICE-SYNC] Syncing teams across devices...');
+          const serverTeams = await ApiService.getAllTeams();
           
-          // Converte array in oggetto se necessario
-          if (Array.isArray(teamsData)) {
-            const teamsObject = teamsData.reduce((acc, team) => {
-              const key = team.slotId || team._id?.toString() || `team-${team.code}`;
-              if (key && team.code) {
-                acc[key] = { 
-                  ...team, 
-                  id: team._id?.toString() || key,
-                  slotId: team.slotId || key 
-                };
+          if (serverTeams) {
+            // Gestisce diversi formati di risposta
+            let teamsData = serverTeams;
+            if (serverTeams.teams) teamsData = serverTeams.teams;
+            if (serverTeams.data) teamsData = serverTeams.data;
+            
+            // Converte array in oggetto se necessario
+            if (Array.isArray(teamsData)) {
+              const teamsObject = teamsData.reduce((acc, team) => {
+                const key = team.slotId || team._id?.toString() || `team-${team.code}`;
+                if (key && team.code) {
+                  acc[key] = { 
+                    ...team, 
+                    id: team._id?.toString() || key,
+                    slotId: team.slotId || key 
+                  };
+                }
+                return acc;
+              }, {});
+              
+              // Aggiorna solo se ci sono cambiamenti
+              const currentTeamsStr = JSON.stringify(teams);
+              const newTeamsStr = JSON.stringify(teamsObject);
+              
+              if (currentTeamsStr !== newTeamsStr) {
+                console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsObject).length);
+                setTeams(teamsObject);
+                localStorage.setItem('teams', JSON.stringify(teamsObject));
               }
-              return acc;
-            }, {});
-            
-            // Aggiorna solo se ci sono cambiamenti
-            const currentTeamsStr = JSON.stringify(teams);
-            const newTeamsStr = JSON.stringify(teamsObject);
-            
-            if (currentTeamsStr !== newTeamsStr) {
-              console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsObject).length);
-              setTeams(teamsObject);
-              localStorage.setItem('teams', JSON.stringify(teamsObject));
-            }
-          } else if (typeof teamsData === 'object') {
-            const currentTeamsStr = JSON.stringify(teams);
-            const newTeamsStr = JSON.stringify(teamsData);
-            
-            if (currentTeamsStr !== newTeamsStr) {
-              console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsData).length);
-              setTeams(teamsData);
-              localStorage.setItem('teams', JSON.stringify(teamsData));
+            } else if (typeof teamsData === 'object') {
+              const currentTeamsStr = JSON.stringify(teams);
+              const newTeamsStr = JSON.stringify(teamsData);
+              
+              if (currentTeamsStr !== newTeamsStr) {
+                console.log('✅ [DEVICE-SYNC] Teams updated:', Object.keys(teamsData).length);
+                setTeams(teamsData);
+                localStorage.setItem('teams', JSON.stringify(teamsData));
+              }
             }
           }
+        } catch (error) {
+          console.log('⚠️ [DEVICE-SYNC] Sync failed (offline?):', error.message);
         }
-      } catch (error) {
-        console.log('⚠️ [DEVICE-SYNC] Sync failed (offline?):', error.message);
       }
-    }
-  };
-  
-  // Sincronizza all'avvio immediatamente
-  syncTeamsAcrossDevices();
-  
-  // E poi ogni 10 secondi per aggiornamenti in tempo reale
-  const interval = setInterval(syncTeamsAcrossDevices, 10000);
-  
-  return () => clearInterval(interval);
-}, []); // Esegui solo una volta all'avvio
+    };
+    
+    // Sincronizza all'avvio immediatamente
+    syncTeamsAcrossDevices();
+    
+    // E poi ogni 10 secondi per aggiornamenti in tempo reale
+    const interval = setInterval(syncTeamsAcrossDevices, 10000);
+    
+    return () => clearInterval(interval);
+  }, []); // Esegui solo una volta all'avvio
 
   // ✅ SINCRONIZZAZIONE PERIODICA MIGLIORATA CON TEAMS FIX
   useEffect(() => {
@@ -697,7 +699,7 @@ useEffect(() => {
     };
   }, [tournaments, teams, matches, pendingSubmissions, scoreAdjustments, managers]); // Re-run when any data changes
 
-  // ✅ USEEFFECT DI DEBUG - POSIZIONE 2
+  // ✅ USEEFFECT DI DEBUG
   useEffect(() => {
     // Debug automatico dopo 2 secondi
     const debugTimer = setTimeout(() => {
@@ -815,6 +817,204 @@ useEffect(() => {
       'admin',
       { teamCode: submission.teamCode, submissionId, tournamentId: submission.tournamentId }
     );
+  };
+
+  const handleManualSubmission = async (submission: Omit<PendingSubmission, 'id' | 'submittedAt'>) => {
+    const newSubmission: PendingSubmission = {
+      ...submission,
+      id: `manual-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      submittedAt: Date.now()
+    };
+
+    console.log('🔄 [MULTI-DEVICE] Adding manual submission with database sync...');
+
+    try {
+      // Update database first
+      if (typeof ApiService?.createPendingSubmission === 'function') {
+        await ApiService.createPendingSubmission(newSubmission);
+        console.log('✅ [MULTI-DEVICE] Manual submission added to database');
+      }
+
+      // Update local state
+      setPendingSubmissions(prev => [...prev, newSubmission]);
+
+      // Update localStorage
+      const updatedPending = [...pendingSubmissions, newSubmission];
+      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
+
+      console.log('✅ [MULTI-DEVICE] Manual submission synced across all devices');
+
+    } catch (error: any) {
+      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setPendingSubmissions(prev => [...prev, newSubmission]);
+    }
+
+    // Log action
+    logAction(
+      auditLogs,
+      setAuditLogs,
+      'MANUAL_SUBMISSION',
+      `Inserimento manuale per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
+      'admin',
+      'admin',
+      { teamCode: submission.teamCode, tournamentId: submission.tournamentId }
+    );
+  };
+
+  // ✅ NUOVE FUNZIONI PER ASSEGNAZIONE PUNTEGGI MANUALE - POSIZIONE CORRETTA
+
+  // Handle manual score update
+  const handleManualScoreUpdate = async (teamCode: string, matchNumber: number, scoreData: any) => {
+    try {
+      console.log('🎯 [MANUAL-SCORE] Updating score:', { teamCode, matchNumber, scoreData });
+      
+      // Check if match already exists
+      const existingMatchIndex = matches.findIndex(m => 
+        m.teamCode === teamCode && 
+        (m.matchNumber === matchNumber || (!m.matchNumber && matches.filter(x => x.teamCode === teamCode).indexOf(m) === matchNumber - 1))
+      );
+
+      if (existingMatchIndex >= 0) {
+        // Update existing match
+        const updatedMatch = { ...matches[existingMatchIndex], ...scoreData };
+        
+        if (typeof ApiService?.updateMatch === 'function') {
+          await ApiService.updateMatch(updatedMatch.id, updatedMatch);
+        }
+        
+        setMatches(prev => {
+          const updated = [...prev];
+          updated[existingMatchIndex] = updatedMatch;
+          return updated;
+        });
+        
+        console.log('✅ [MANUAL-SCORE] Match updated successfully');
+      } else {
+        // Create new match
+        const newMatch = {
+          ...scoreData,
+          id: `manual-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        };
+        
+        if (typeof ApiService?.createMatch === 'function') {
+          await ApiService.createMatch(newMatch);
+        }
+        
+        setMatches(prev => [...prev, newMatch]);
+        
+        console.log('✅ [MANUAL-SCORE] New match created successfully');
+      }
+
+      // Update localStorage
+      const updatedMatches = existingMatchIndex >= 0 
+        ? matches.map((m, i) => i === existingMatchIndex ? { ...m, ...scoreData } : m)
+        : [...matches, { ...scoreData, id: `manual-${Date.now()}` }];
+      
+      localStorage.setItem('matches', JSON.stringify(updatedMatches));
+
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANUAL_SCORE_ASSIGNMENT',
+        `Punteggio assegnato manualmente a ${teamCode}: ${scoreData.position}° posto, ${scoreData.kills} kills, ${scoreData.score} punti`,
+        'admin',
+        'admin',
+        { teamCode, matchNumber, tournamentId: selectedTournament }
+      );
+
+    } catch (error: any) {
+      console.error('❌ [MANUAL-SCORE] Error updating score:', error);
+      alert('Errore nel salvataggio del punteggio: ' + error.message);
+    }
+  };
+
+  // Handle score deletion
+  const handleManualScoreDelete = async (matchId: string) => {
+    try {
+      console.log('🗑️ [MANUAL-SCORE] Deleting match:', matchId);
+      
+      if (typeof ApiService?.deleteMatch === 'function') {
+        await ApiService.deleteMatch(matchId);
+      }
+      
+      setMatches(prev => prev.filter(m => m.id !== matchId));
+      
+      // Update localStorage
+      const updatedMatches = matches.filter(m => m.id !== matchId);
+      localStorage.setItem('matches', JSON.stringify(updatedMatches));
+      
+      console.log('✅ [MANUAL-SCORE] Match deleted successfully');
+      
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANUAL_SCORE_DELETION',
+        `Punteggio eliminato manualmente: ${matchId}`,
+        'admin',
+        'admin',
+        { matchId, tournamentId: selectedTournament }
+      );
+
+    } catch (error: any) {
+      console.error('❌ [MANUAL-SCORE] Error deleting score:', error);
+      alert('Errore nell\'eliminazione del punteggio: ' + error.message);
+    }
+  };
+
+  // Handle multiplier update
+  const handleMultiplierUpdate = async (newMultipliers: Record<number, number>) => {
+    try {
+      console.log('🔢 [MULTIPLIERS] Updating multipliers:', newMultipliers);
+      
+      // Update local state
+      setMultipliers(newMultipliers);
+      
+      // Update localStorage
+      localStorage.setItem('multipliers', JSON.stringify(newMultipliers));
+      
+      console.log('✅ [MULTIPLIERS] Multipliers updated successfully');
+      
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MULTIPLIERS_UPDATED',
+        `Moltiplicatori aggiornati: ${Object.entries(newMultipliers).map(([pos, mult]) => `${pos}°=${mult}x`).join(', ')}`,
+        'admin',
+        'admin',
+        { multipliers: newMultipliers, tournamentId: selectedTournament }
+      );
+
+    } catch (error: any) {
+      console.error('❌ [MULTIPLIERS] Error updating multipliers:', error);
+      alert('Errore nell\'aggiornamento dei moltiplicatori: ' + error.message);
+    }
+  };
+
+  const copyToClipboard = async (text: string, id?: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      if (id) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    }
   };
 
   // Raggruppa le submission pendenti per team
@@ -1200,74 +1400,9 @@ useEffect(() => {
     setSelectedTournament('');
   };
 
-  const handleManualSubmission = async (submission: Omit<PendingSubmission, 'id' | 'submittedAt'>) => {
-    const newSubmission: PendingSubmission = {
-      ...submission,
-      id: `manual-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      submittedAt: Date.now()
-    };
-
-    console.log('🔄 [MULTI-DEVICE] Adding manual submission with database sync...');
-
-    try {
-      // Update database first
-      if (typeof ApiService?.createPendingSubmission === 'function') {
-        await ApiService.createPendingSubmission(newSubmission);
-        console.log('✅ [MULTI-DEVICE] Manual submission added to database');
-      }
-
-      // Update local state
-      setPendingSubmissions(prev => [...prev, newSubmission]);
-
-      // Update localStorage
-      const updatedPending = [...pendingSubmissions, newSubmission];
-      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
-
-      console.log('✅ [MULTI-DEVICE] Manual submission synced across all devices');
-
-    } catch (error: any) {
-      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
-      
-      // Fallback: update locally even if database fails
-      setPendingSubmissions(prev => [...prev, newSubmission]);
-    }
-
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'MANUAL_SUBMISSION',
-      `Inserimento manuale per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
-      'admin',
-      'admin',
-      { teamCode: submission.teamCode, tournamentId: submission.tournamentId }
-    );
-  };
-
-  const copyToClipboard = async (text: string, id?: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      if (id) {
-        setCopied(id);
-        setTimeout(() => setCopied(null), 2000);
-      }
-    } catch (error) {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      if (id) {
-        setCopied(id);
-        setTimeout(() => setCopied(null), 2000);
-      }
-    }
-  };
-
   const tabItems = [
     { id: 'tournaments', label: 'TORNEI', icon: Trophy },
+    { id: 'scores', label: 'ASSEGNA PUNTEGGI', icon: Target },
     { id: 'pending', label: 'APPROVAZIONI', icon: Clock, badge: teamsWithPendingCount, count: totalPendingCount },
     { id: 'audit', label: 'AUDIT LOG', icon: Eye },
     { id: 'archive', label: 'ARCHIVIO', icon: Archive }
@@ -1337,7 +1472,7 @@ useEffect(() => {
                 <span className="hidden sm:inline">OBS</span>
               </button>
               
-              {/* ✅ PULSANTE DEBUG TEMPORANEO - POSIZIONE 3 */}
+              {/* ✅ PULSANTE DEBUG TEMPORANEO */}
               <button
                 onClick={debugDatabaseConnection}
                 className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-yellow-500/20 border border-yellow-500/50 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors font-mono text-xs sm:text-sm"
@@ -1614,6 +1749,85 @@ useEffect(() => {
           </div>
         )}
 
+        {/* Score Assignment Tab */}
+        {activeTab === 'scores' && (
+          <div className="space-y-4 sm:space-y-6">
+            <GlassPanel className="p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-white mb-2 font-mono">ASSEGNAZIONE PUNTEGGI</h2>
+                  <p className="text-ice-blue/80 font-mono text-sm">
+                    Controllo manuale completo di punteggi, posizioni e moltiplicatori per admin e gestori
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Target className="w-8 h-8 text-ice-blue animate-pulse" />
+                </div>
+              </div>
+
+              {selectedTournament ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-ice-blue/10 border border-ice-blue/30 rounded-lg">
+                    <h3 className="text-white font-mono font-bold mb-2">
+                      TORNEO SELEZIONATO: {tournaments[selectedTournament]?.name}
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="text-ice-blue/60 font-mono">Squadre</div>
+                        <div className="text-white font-mono font-bold">
+                          {Object.values(teams).filter(team => team.tournamentId === selectedTournament).length}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-ice-blue/60 font-mono">Partite totali</div>
+                        <div className="text-white font-mono font-bold">
+                          {tournaments[selectedTournament]?.settings?.totalMatches || 4}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-ice-blue/60 font-mono">Punteggi inseriti</div>
+                        <div className="text-white font-mono font-bold">
+                          {matches.filter(match => match.tournamentId === selectedTournament).length}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-ice-blue/60 font-mono">Status</div>
+                        <div className={`font-mono font-bold ${
+                          tournaments[selectedTournament]?.status === 'active' ? 'text-green-400' : 'text-yellow-400'
+                        }`}>
+                          {tournaments[selectedTournament]?.status?.toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setShowScoreAssignment(true)}
+                    className="w-full flex items-center justify-center space-x-3 p-6 bg-gradient-to-r from-ice-blue/20 to-ice-blue-dark/20 border border-ice-blue/30 text-ice-blue rounded-xl hover:from-ice-blue/30 hover:to-ice-blue-dark/30 transition-all font-mono font-bold text-lg"
+                  >
+                    <Target className="w-6 h-6" />
+                    <span>APRI SISTEMA ASSEGNAZIONE PUNTEGGI</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Target className="w-16 h-16 mx-auto text-ice-blue/50 mb-4" />
+                  <h3 className="text-white font-mono font-bold mb-2">NESSUN TORNEO SELEZIONATO</h3>
+                  <p className="text-ice-blue/60 font-mono text-sm mb-6">
+                    Seleziona un torneo dal tab "TORNEI" per accedere al sistema di assegnazione punteggi
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('tournaments')}
+                    className="px-6 py-3 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded-lg hover:bg-ice-blue/30 transition-colors font-mono"
+                  >
+                    VAI AI TORNEI
+                  </button>
+                </div>
+              )}
+            </GlassPanel>
+          </div>
+        )}
+
         {/* Pending Submissions Tab */}
         {activeTab === 'pending' && (
           <PendingSubmissions
@@ -1695,6 +1909,22 @@ useEffect(() => {
           onSubmit={handleManualSubmission}
           submitterName="Admin"
           submitterType="admin"
+        />
+      )}
+
+      {/* Manual Score Assignment Modal */}
+      {showScoreAssignment && selectedTournament && (
+        <ManualScoreAssignment
+          isOpen={showScoreAssignment}
+          onClose={() => setShowScoreAssignment(false)}
+          tournament={tournaments[selectedTournament]}
+          teams={Object.values(teams).filter(team => team.tournamentId === selectedTournament)}
+          matches={matches.filter(match => match.tournamentId === selectedTournament)}
+          multipliers={multipliers}
+          onScoreUpdate={handleManualScoreUpdate}
+          onScoreDelete={handleManualScoreDelete}
+          onMultiplierUpdate={handleMultiplierUpdate}
+          userRole="admin"
         />
       )}
 
