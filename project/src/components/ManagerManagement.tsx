@@ -10,91 +10,171 @@ interface ManagerManagementProps {
   setManagers: (managers: Record<string, Manager> | ((prev: Record<string, Manager>) => Record<string, Manager>)) => void;
   auditLogs: AuditLog[];
   setAuditLogs: (logs: AuditLog[] | ((prev: AuditLog[]) => AuditLog[])) => void;
+  // ✅ NUOVE PROPS PER DATABASE SYNC
+  createManager?: (managerData: Omit<Manager, 'id' | 'createdAt'>) => Promise<Manager>;
+  updateManager?: (managerCode: string, updateData: Partial<Manager>) => Promise<void>;
+  deleteManager?: (managerCode: string) => Promise<void>;
 }
 
 export default function ManagerManagement({ 
   managers, 
   setManagers, 
   auditLogs, 
-  setAuditLogs 
+  setAuditLogs,
+  createManager: createManagerWithSync,
+  updateManager: updateManagerWithSync,
+  deleteManager: deleteManagerWithSync
 }: ManagerManagementProps) {
   const [managerName, setManagerName] = useState('');
   const [showManagerCode, setShowManagerCode] = useState<{ name: string; code: string } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const createManager = () => {
-    if (!managerName.trim()) return;
+  // ✅ USA LA NUOVA FUNZIONE CON DATABASE SYNC
+  const createManager = async () => {
+    if (!managerName.trim() || isCreating) return;
 
-    const code = generateUniqueManagerCode(managers);
-    const newManager: Manager = {
-      id: `mgr-${Date.now()}`,
-      name: managerName.trim(),
-      code,
-      permissions: ['scores', 'pending', 'adjustments', 'multipliers'],
-      createdAt: Date.now(),
-      createdBy: 'admin',
-      isActive: true
-    };
+    setIsCreating(true);
+    
+    try {
+      const code = generateUniqueManagerCode(managers);
+      
+      if (createManagerWithSync) {
+        // ✅ USA LA FUNZIONE CON DATABASE SYNC
+        console.log('🔄 [MANAGER-UI] Using database sync function...');
+        
+        const newManager = await createManagerWithSync({
+          name: managerName.trim(),
+          code,
+          permissions: ['scores', 'pending', 'adjustments', 'multipliers'],
+          createdBy: 'admin',
+          isActive: true
+        });
+        
+        console.log('✅ [MANAGER-UI] Manager created with sync:', newManager);
+        
+        setManagerName('');
+        setShowManagerCode({ name: managerName.trim(), code });
+        
+      } else {
+        // ❌ FALLBACK - FUNZIONE VECCHIA (solo per compatibilità)
+        console.warn('⚠️ [MANAGER-UI] No sync function available, using fallback...');
+        
+        const newManager: Manager = {
+          id: `mgr-${Date.now()}`,
+          name: managerName.trim(),
+          code,
+          permissions: ['scores', 'pending', 'adjustments', 'multipliers'],
+          createdAt: Date.now(),
+          createdBy: 'admin',
+          isActive: true
+        };
 
-    setManagers(prev => ({ ...prev, [code]: newManager }));
-    setManagerName('');
-    setShowManagerCode({ name: managerName.trim(), code });
+        setManagers(prev => ({ ...prev, [code]: newManager }));
+        setManagerName('');
+        setShowManagerCode({ name: managerName.trim(), code });
 
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'MANAGER_CREATED',
-      `Nuovo gestore creato: ${managerName.trim()} (${code})`,
-      'admin',
-      'admin',
-      { managerCode: code, managerName: managerName.trim() }
-    );
+        // Log action manualmente
+        logAction(
+          auditLogs,
+          setAuditLogs,
+          'MANAGER_CREATED',
+          `Nuovo gestore creato: ${managerName.trim()} (${code})`,
+          'admin',
+          'admin',
+          { managerCode: code, managerName: managerName.trim() }
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ [MANAGER-UI] Error creating manager:', error);
+      alert('Errore nella creazione del gestore: ' + error.message);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const toggleManagerStatus = (managerCode: string) => {
+  // ✅ USA LA NUOVA FUNZIONE CON DATABASE SYNC PER TOGGLE
+  const toggleManagerStatus = async (managerCode: string) => {
     const manager = managers[managerCode];
     if (!manager) return;
 
-    const newStatus = !manager.isActive;
-    setManagers(prev => ({
-      ...prev,
-      [managerCode]: { ...manager, isActive: newStatus }
-    }));
+    try {
+      const newStatus = !manager.isActive;
+      
+      if (updateManagerWithSync) {
+        // ✅ USA LA FUNZIONE CON DATABASE SYNC
+        console.log('🔄 [MANAGER-UI] Updating manager status with sync...');
+        
+        await updateManagerWithSync(managerCode, { isActive: newStatus });
+        
+        console.log('✅ [MANAGER-UI] Manager status updated with sync');
+        
+      } else {
+        // ❌ FALLBACK - FUNZIONE VECCHIA (solo per compatibilità)
+        console.warn('⚠️ [MANAGER-UI] No sync function available, using fallback...');
+        
+        setManagers(prev => ({
+          ...prev,
+          [managerCode]: { ...manager, isActive: newStatus }
+        }));
 
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'MANAGER_STATUS_CHANGED',
-      `Gestore ${manager.name} ${newStatus ? 'attivato' : 'disattivato'}`,
-      'admin',
-      'admin',
-      { managerCode, managerName: manager.name, newStatus }
-    );
+        // Log action manualmente
+        logAction(
+          auditLogs,
+          setAuditLogs,
+          'MANAGER_STATUS_CHANGED',
+          `Gestore ${manager.name} ${newStatus ? 'attivato' : 'disattivato'}`,
+          'admin',
+          'admin',
+          { managerCode, managerName: manager.name, newStatus }
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ [MANAGER-UI] Error updating manager status:', error);
+      alert('Errore nell\'aggiornamento dello stato del gestore: ' + error.message);
+    }
   };
 
-  const deleteManager = (managerCode: string) => {
+  // ✅ USA LA NUOVA FUNZIONE CON DATABASE SYNC PER DELETE
+  const deleteManager = async (managerCode: string) => {
     const manager = managers[managerCode];
     if (!manager) return;
 
     if (!confirm(`Sei sicuro di voler eliminare il gestore ${manager.name}?`)) return;
 
-    setManagers(prev => {
-      const newManagers = { ...prev };
-      delete newManagers[managerCode];
-      return newManagers;
-    });
+    try {
+      if (deleteManagerWithSync) {
+        // ✅ USA LA FUNZIONE CON DATABASE SYNC
+        console.log('🔄 [MANAGER-UI] Deleting manager with sync...');
+        
+        await deleteManagerWithSync(managerCode);
+        
+        console.log('✅ [MANAGER-UI] Manager deleted with sync');
+        
+      } else {
+        // ❌ FALLBACK - FUNZIONE VECCHIA (solo per compatibilità)
+        console.warn('⚠️ [MANAGER-UI] No sync function available, using fallback...');
+        
+        setManagers(prev => {
+          const newManagers = { ...prev };
+          delete newManagers[managerCode];
+          return newManagers;
+        });
 
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'MANAGER_DELETED',
-      `Gestore eliminato: ${manager.name} (${managerCode})`,
-      'admin',
-      'admin',
-      { managerCode, managerName: manager.name }
-    );
+        // Log action manualmente
+        logAction(
+          auditLogs,
+          setAuditLogs,
+          'MANAGER_DELETED',
+          `Gestore eliminato: ${manager.name} (${managerCode})`,
+          'admin',
+          'admin',
+          { managerCode, managerName: manager.name }
+        );
+      }
+    } catch (error: any) {
+      console.error('❌ [MANAGER-UI] Error deleting manager:', error);
+      alert('Errore nell\'eliminazione del gestore: ' + error.message);
+    }
   };
 
   const formatTime = (timestamp: number) => {
@@ -119,6 +199,13 @@ export default function ManagerManagement({
             <span>CREA NUOVO GESTORE</span>
           </h2>
           
+          {/* ✅ DEBUG INFO */}
+          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="text-yellow-400 font-mono text-xs">
+              🔧 DEBUG: Sync functions available: {createManagerWithSync ? '✅' : '❌'}
+            </div>
+          </div>
+          
           <div className="space-y-4">
             <div>
               <label className="block text-ice-blue mb-2 font-mono text-sm">Nome Gestore</label>
@@ -128,6 +215,7 @@ export default function ManagerManagement({
                 onChange={(e) => setManagerName(e.target.value)}
                 placeholder="Inserisci nome gestore"
                 className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-black/30 border border-ice-blue/40 rounded-xl text-white placeholder-ice-blue/60 focus:outline-none focus:border-ice-blue font-mono text-sm sm:text-base"
+                disabled={isCreating}
               />
             </div>
 
@@ -144,10 +232,10 @@ export default function ManagerManagement({
 
             <button
               onClick={createManager}
-              disabled={!managerName.trim()}
+              disabled={!managerName.trim() || isCreating}
               className="w-full py-2 sm:py-3 bg-gradient-to-r from-ice-blue to-ice-blue-dark text-black font-bold rounded-xl hover:shadow-[0_0_20px_rgba(161,224,255,0.5)] hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none font-mono text-sm sm:text-base"
             >
-              CREA GESTORE
+              {isCreating ? 'CREAZIONE IN CORSO...' : 'CREA GESTORE'}
             </button>
           </div>
         </GlassPanel>
@@ -206,6 +294,10 @@ export default function ManagerManagement({
                 </div>
                 <div className="text-ice-blue/60 text-xs font-mono">
                   Creato il {formatTime(manager.createdAt)}
+                  {/* ✅ DEBUG INFO PER OGNI MANAGER */}
+                  <div className="text-yellow-400 text-xs mt-1">
+                    ID: {manager.id} | Attivo: {manager.isActive ? '✅' : '❌'}
+                  </div>
                 </div>
               </div>
             ))}
