@@ -1228,6 +1228,24 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 🔍 DEBUG DB
               </button>
+
+              <button
+  onClick={async () => {
+    try {
+      console.log('🔍 [DEBUG] Testing GET /api/managers...');
+      const result = await ApiService.getAllManagers?.();
+      console.log('✅ [DEBUG] GET managers result:', result);
+      console.log('✅ [DEBUG] Managers count:', result ? Object.keys(result).length : 0);
+      console.log('✅ [DEBUG] Type of result:', typeof result);
+      console.log('✅ [DEBUG] Is array?', Array.isArray(result));
+    } catch (error) {
+      console.error('❌ [DEBUG] GET managers failed:', error);
+    }
+  }}
+  className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors font-mono text-xs sm:text-sm"
+>
+  🔍 TEST MANAGERS
+</button>
               
               <button
                 onClick={() => setShowTournamentCreator(true)}
