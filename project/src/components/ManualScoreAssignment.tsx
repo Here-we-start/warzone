@@ -35,7 +35,7 @@ export default function ManualScoreAssignment({
 
   const totalMatches = tournament.settings?.totalMatches || 4;
 
-  // Initialize score entries when match changes
+ // Initialize score entries when match changes (but preserve user edits)
   useEffect(() => {
     if (teams.length > 0) {
       const initialEntries: Record<string, { kills: number; position: number; score: number; id?: string }> = {};
@@ -46,6 +46,10 @@ export default function ManualScoreAssignment({
           (m.matchNumber === selectedMatch || (!m.matchNumber && matches.filter(x => x.teamCode === team.code).indexOf(m) === selectedMatch - 1))
         );
         
+        // Check if user is currently editing this team's data
+        const currentEntry = scoreEntries[team.code];
+        const isUserEditing = currentEntry && (currentEntry.kills > 0 || currentEntry.position !== index + 1);
+        
         if (existingMatch) {
           initialEntries[team.code] = {
             kills: existingMatch.kills || 0,
@@ -53,6 +57,9 @@ export default function ManualScoreAssignment({
             score: existingMatch.score || 0,
             id: existingMatch.id
           };
+        } else if (isUserEditing) {
+          // Preserve user's current edits
+          initialEntries[team.code] = currentEntry;
         } else {
           initialEntries[team.code] = {
             kills: 0,
@@ -64,7 +71,7 @@ export default function ManualScoreAssignment({
       
       setScoreEntries(initialEntries);
     }
-  }, [teams, selectedMatch, matches]);
+  }, [teams, selectedMatch]); // Removed 'matches' dependency to prevent resets
 
   // Initialize multipliers
   useEffect(() => {
