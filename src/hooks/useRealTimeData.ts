@@ -111,3 +111,53 @@
        setIsLoading(false);
      }
    };
+
+   // Caricamento iniziale
+   useEffect(() => {
+     const initializeData = async () => {
+       console.log(`🔄 [${key}] Initializing data...`);
+       await fetchData();
+       console.log(`✅ [${key}] Data initialized`);
+     };
+     
+     initializeData();
+   }, [key]);
+
+   // Listener per eventi Socket.io in tempo reale
+   useEffect(() => {
+     if (!isConnected) return;
+
+     const handleCreate = (payload: any) => {
+       console.log(`📡 ${key} creato:`, payload);
+       if (key === 'tournaments' && payload.tournament) {
+         setData(prev => ({
+           ...prev as any,
+           [payload.tournament.id]: payload.tournament
+         }));
+         // Salva anche in localStorage
+         const updatedData = { ...prev as any, [payload.tournament.id]: payload.tournament };
+         localStorage.setItem(key, JSON.stringify(updatedData));
+       } else if (key === 'teams' && payload.team) {
+         setData(prev => ({
+           ...prev as any,
+           [payload.team.id]: payload.team
+         }));
+         const updatedData = { ...prev as any, [payload.team.id]: payload.team };
+         localStorage.setItem(key, JSON.stringify(updatedData));
+       } else if (key === 'matches' && payload.match) {
+         setData(prev => [...(prev as any), payload.match]);
+         const updatedData = [...(prev as any), payload.match];
+         localStorage.setItem(key, JSON.stringify(updatedData));
+       } else if (key === 'managers' && payload.manager) {
+         setData(prev => ({
+           ...prev as any,
+           [payload.manager.code]: payload.manager
+         }));
+         const updatedData = { ...prev as any, [payload.manager.code]: payload.manager };
+         localStorage.setItem(key, JSON.stringify(updatedData));
+       } else if (key === 'auditLogs' && payload.auditLog) {
+         setData(prev => [payload.auditLog, ...(prev as any)]);
+         const updatedData = [payload.auditLog, ...(prev as any)];
+         localStorage.setItem(key, JSON.stringify(updatedData));
+       }
+     };

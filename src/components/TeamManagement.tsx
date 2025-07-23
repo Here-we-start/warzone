@@ -48,12 +48,19 @@ export default function TeamManagement({
       tournamentId: selectedTournament
     };
 
+    console.log('🔍 [TEAM] Creating new team:', {
+      name: newTeam.name,
+      code: newTeam.code,
+      tournamentId: newTeam.tournamentId
+    });
+
     // Usa syncOperation per sincronizzazione robusta
     const syncResult = await ApiService.syncOperation({
       localUpdate: () => {
         setTeams(prev => ({ ...prev, [code]: newTeam }));
         setTeamName('');
         setShowTeamCode({ name: teamName.trim(), code });
+        console.log('✅ [TEAM] Local state updated');
       },
       apiCall: () => ApiService.createTeam(newTeam),
       storageKey: 'teams',
@@ -65,7 +72,7 @@ export default function TeamManagement({
       console.log('✅ Team created and synced successfully');
     } else {
       console.warn('⚠️ Team created locally, database sync failed:', syncResult.error);
-      alert('⚠️ Squadra creata localmente. Sincronizzazione database fallita, ma la squadra funzionerà ugualmente.');
+      console.log('💾 Team salvato localmente, funzionerà ugualmente');
     }
 
     // Broadcast per sincronizzazione globale
