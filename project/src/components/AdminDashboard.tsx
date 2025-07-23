@@ -1765,65 +1765,163 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </div>
               </div>
 
-              {selectedTournament ? (
-                <div className="space-y-4">
-                  <div className="p-4 bg-ice-blue/10 border border-ice-blue/30 rounded-lg">
-                    <h3 className="text-white font-mono font-bold mb-2">
-                      TORNEO SELEZIONATO: {tournaments[selectedTournament]?.name}
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-ice-blue/60 font-mono">Squadre</div>
-                        <div className="text-white font-mono font-bold">
-                          {Object.values(teams).filter(team => team.tournamentId === selectedTournament).length}
-                        </div>
+              {/* ✅ SEMPRE MOSTRA LA SELEZIONE TORNEO */}
+              <div className="space-y-4">
+                {/* Tournament Selection */}
+                <div className="p-4 bg-ice-blue/10 border border-ice-blue/30 rounded-lg">
+                  <h3 className="text-white font-mono font-bold mb-4">SELEZIONA TORNEO</h3>
+                  
+                  {activeTournaments.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Trophy className="w-12 h-12 mx-auto text-ice-blue/50 mb-4" />
+                      <p className="text-ice-blue/60 font-mono mb-4">Nessun torneo attivo disponibile</p>
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        <button
+                          onClick={() => setShowTournamentCreator(true)}
+                          className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 border border-green-500/50 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors font-mono text-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>CREA TORNEO</span>
+                        </button>
+                        <button
+                          onClick={createBlackCrowDemo}
+                          className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-sm"
+                        >
+                          <Play className="w-4 h-4" />
+                          <span>DEMO BLACK CROW</span>
+                        </button>
                       </div>
-                      <div>
-                        <div className="text-ice-blue/60 font-mono">Partite totali</div>
-                        <div className="text-white font-mono font-bold">
-                          {tournaments[selectedTournament]?.settings?.totalMatches || 4}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {activeTournaments.map(tournament => (
+                        <button
+                          key={tournament.id}
+                          onClick={() => setSelectedTournament(tournament.id)}
+                          className={`p-4 rounded-lg text-left transition-all border ${
+                            selectedTournament === tournament.id
+                              ? 'bg-ice-blue/20 border-ice-blue text-ice-blue'
+                              : 'bg-black/20 border-ice-blue/20 text-white hover:bg-ice-blue/10 hover:border-ice-blue/40'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="font-bold font-mono text-sm mb-1">{tournament.name}</div>
+                              <div className="text-xs font-mono opacity-80">
+                                {tournament.type} • {tournament.startDate}
+                              </div>
+                              <div className="text-xs font-mono opacity-60 mt-1">
+                                {Object.values(teams).filter(team => team.tournamentId === tournament.id).length} squadre
+                              </div>
+                            </div>
+                            {selectedTournament === tournament.id && (
+                              <div className="ml-2">
+                                <div className="w-3 h-3 bg-ice-blue rounded-full animate-pulse"></div>
+                              </div>
+                            )}
+                          </div>
+                          {tournament.isDemo && (
+                            <div className="mt-2 px-2 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-xs font-mono inline-block">
+                              DEMO
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Tournament Details & Action */}
+                {selectedTournament ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                      <h3 className="text-green-400 font-mono font-bold mb-3">
+                        TORNEO SELEZIONATO: {tournaments[selectedTournament]?.name}
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <div className="text-green-400/60 font-mono">Squadre</div>
+                          <div className="text-white font-mono font-bold">
+                            {Object.values(teams).filter(team => team.tournamentId === selectedTournament).length}
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-ice-blue/60 font-mono">Punteggi inseriti</div>
-                        <div className="text-white font-mono font-bold">
-                          {matches.filter(match => match.tournamentId === selectedTournament).length}
+                        <div>
+                          <div className="text-green-400/60 font-mono">Partite totali</div>
+                          <div className="text-white font-mono font-bold">
+                            {tournaments[selectedTournament]?.settings?.totalMatches || 4}
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <div className="text-ice-blue/60 font-mono">Status</div>
-                        <div className={`font-mono font-bold ${
-                          tournaments[selectedTournament]?.status === 'active' ? 'text-green-400' : 'text-yellow-400'
-                        }`}>
-                          {tournaments[selectedTournament]?.status?.toUpperCase()}
+                        <div>
+                          <div className="text-green-400/60 font-mono">Punteggi inseriti</div>
+                          <div className="text-white font-mono font-bold">
+                            {matches.filter(match => match.tournamentId === selectedTournament).length}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-green-400/60 font-mono">Status</div>
+                          <div className={`font-mono font-bold ${
+                            tournaments[selectedTournament]?.status === 'active' ? 'text-green-400' : 'text-yellow-400'
+                          }`}>
+                            {tournaments[selectedTournament]?.status?.toUpperCase()}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <button
-                    onClick={() => setShowScoreAssignment(true)}
-                    className="w-full flex items-center justify-center space-x-3 p-6 bg-gradient-to-r from-ice-blue/20 to-ice-blue-dark/20 border border-ice-blue/30 text-ice-blue rounded-xl hover:from-ice-blue/30 hover:to-ice-blue-dark/30 transition-all font-mono font-bold text-lg"
-                  >
-                    <Target className="w-6 h-6" />
-                    <span>APRI SISTEMA ASSEGNAZIONE PUNTEGGI</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Target className="w-16 h-16 mx-auto text-ice-blue/50 mb-4" />
-                  <h3 className="text-white font-mono font-bold mb-2">NESSUN TORNEO SELEZIONATO</h3>
-                  <p className="text-ice-blue/60 font-mono text-sm mb-6">
-                    Seleziona un torneo dal tab "TORNEI" per accedere al sistema di assegnazione punteggi
-                  </p>
-                  <button
-                    onClick={() => setActiveTab('tournaments')}
-                    className="px-6 py-3 bg-ice-blue/20 border border-ice-blue/50 text-ice-blue rounded-lg hover:bg-ice-blue/30 transition-colors font-mono"
-                  >
-                    VAI AI TORNEI
-                  </button>
-                </div>
-              )}
+                    <button
+                      onClick={() => setShowScoreAssignment(true)}
+                      className="w-full flex items-center justify-center space-x-3 p-6 bg-gradient-to-r from-ice-blue/20 to-ice-blue-dark/20 border border-ice-blue/30 text-ice-blue rounded-xl hover:from-ice-blue/30 hover:to-ice-blue-dark/30 transition-all font-mono font-bold text-lg shadow-lg"
+                    >
+                      <Target className="w-6 h-6" />
+                      <span>APRI SISTEMA ASSEGNAZIONE PUNTEGGI</span>
+                    </button>
+
+                    {/* Quick Actions */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <button
+                        onClick={() => {
+                          setActiveTab('pending');
+                        }}
+                        className="flex items-center justify-center space-x-2 p-3 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-lg hover:bg-orange-500/20 transition-colors font-mono text-sm"
+                      >
+                        <Clock className="w-4 h-4" />
+                        <span>APPROVAZIONI</span>
+                        {pendingSubmissions.filter(p => p.tournamentId === selectedTournament).length > 0 && (
+                          <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-full text-xs">
+                            {pendingSubmissions.filter(p => p.tournamentId === selectedTournament).length}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setShowManualSubmission(true)}
+                        className="flex items-center justify-center space-x-2 p-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors font-mono text-sm"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>INSERIMENTO MANUALE</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Vai ai gestori del torneo
+                          setActiveTab('tournaments');
+                          // Il torneo rimarrà selezionato
+                        }}
+                        className="flex items-center justify-center space-x-2 p-3 bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded-lg hover:bg-purple-500/20 transition-colors font-mono text-sm"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span>GESTISCI TORNEO</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Target className="w-16 h-16 mx-auto text-ice-blue/50 mb-4" />
+                    <h3 className="text-white font-mono font-bold mb-2">SELEZIONA UN TORNEO</h3>
+                    <p className="text-ice-blue/60 font-mono text-sm">
+                      Scegli un torneo dalla lista sopra per accedere al sistema di assegnazione punteggi
+                    </p>
+                  </div>
+                )}
+              </div>
             </GlassPanel>
           </div>
         )}
