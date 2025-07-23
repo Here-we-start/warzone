@@ -70,7 +70,9 @@
 -    }));
 +    
 +    const updatedManager = { ...manager, isActive: newStatus };
-+    const updatedManagers = { ...managers, [managerCode]: updatedManager };
++    const u     )
+   }
+pdatedManagers = { ...managers, [managerCode]: updatedManager };
 +
 +    // Sincronizza con database
 +    ApiService.syncOperation({
@@ -96,7 +98,8 @@
      if (!confirm(`Sei sicuro di voler eliminare il gestore ${manager.name}?`)) return;
 
 -    setManagers(prev => {
--      const newManagers = { ...prev };
+-      const 
+   }newManagers = { ...prev };
 -      delete newManagers[managerCode];
 -      return newManagers;
 -    });
