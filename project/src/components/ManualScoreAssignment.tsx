@@ -331,7 +331,7 @@ export default function ManualScoreAssignment({
                             <input
                               type="number"
                               min="1"
-                              max={teams.length}
+                              max="20"
                               value={entry.position}
                               onChange={(e) => updateScoreEntry(team.code, 'position', parseInt(e.target.value) || 1)}
                               className="w-20 p-2 bg-black/20 border border-ice-blue/30 rounded text-white font-mono text-center"
