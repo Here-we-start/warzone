@@ -5,6 +5,7 @@
 +import MultiplierSettings from './MultiplierSettings';
 
  interface TournamentCreatorProps {
+ }
 @@ .. @@
    const [lobbies, setLobbies] = useState(2);
    const [selectedManagers, setSelectedManagers] = useState<string[]>([]);
