@@ -1092,6 +1092,285 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
           
+          return await response.json();
+        },
+        
+        // Metodo 3: Format semplificato
+        async () => {
+          const simplifiedManager = {
+            name: newManager.name,
+            code: newManager.code,
+            permissions: newManager.permissions,
+            isActive: newManager.isActive,
+            createdBy: newManager.createdBy
+          };
+          
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(simplifiedManager)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return await response.json();
+        }
+      ];
+
+      // Prova tutti i metodi API
+      for (let i = 0; i < apiMethods.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-SYNC] Trying API method ${i + 1} for creation...`);
+          await apiMethods[i]();
+          console.log(`✅ [MANAGER-SYNC] Database save successful (method ${i + 1})`);
+          databaseSuccess = true;
+          break;
+        } catch (methodError: any) {
+          console.log(`⚠️ [MANAGER-SYNC] API method ${i + 1} failed:`, methodError.message);
+          
+          // Se è l'ultimo metodo e fallisce
+          if (i === apiMethods.length - 1) {
+            console.warn('⚠️ [MANAGER-SYNC] All database methods failed, proceeding with localStorage');
+          }
+        }
+      }
+
+      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
+      console.log('🔄 [MANAGER-SYNC] Step 2: Updating local state...');
+      setManagers(prev => {
+        const updated = { ...prev, [newManager.code]: newManager };
+        console.log('✅ [MANAGER-SYNC] Local state updated:', Object.keys(updated).length, 'managers');
+        return updated;
+      });
+
+      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
+      console.log('🔄 [MANAGER-SYNC] Step 3: Saving to localStorage...');
+      const currentManagers = { ...managers, [newManager.code]: newManager };
+      localStorage.setItem('managers', JSON.stringify(currentManagers));
+      
+      // Verifica salvataggio
+      const verification = localStorage.getItem('managers');
+      if (verification) {
+        const parsed = JSON.parse(verification);
+        if (parsed[newManager.code]) {
+          localStorageSuccess = true;
+          console.log('✅ [MANAGER-SYNC] localStorage save successful');
+        }
+      }
+
+      // ✅ STEP 4: BROADCAST PER MULTI-DEVICE SYNC
+      console.log('🔄 [MANAGER-SYNC] Step 4: Broadcasting sync event...');
+      const syncEvent = new CustomEvent('managersUpdated', {
+        detail: { 
+          managers: currentManagers, 
+          action: 'created', 
+          managerCode: newManager.code,
+          databaseSuccess,
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(syncEvent);
+
+      // ✅ STEP 5: LOG ACTION
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_CREATED',
+        `Gestore creato: ${newManager.name} (${newManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}, Local: ${localStorageSuccess ? 'OK' : 'FAIL'}`,
+        'admin',
+        'admin',
+        { 
+          managerCode: newManager.code, 
+          permissions: newManager.permissions,
+          databaseSuccess,
+          localStorageSuccess
+        }
+      );
+
+      // ✅ STEP 6: RISULTATO FINALE
+      if (databaseSuccess && localStorageSuccess) {
+        console.log('🎉 [MANAGER-SYNC] Manager created successfully (Database + localStorage)');
+      } else if (localStorageSuccess) {
+        console.log('⚠️ [MANAGER-SYNC] Manager created with localStorage only (Database failed)');
+        
+        // Schedule retry per database
+        setTimeout(async () => {
+          console.log('🔄 [MANAGER-SYNC] Retrying database save...');
+          try {
+            await apiMethods[0](); // Retry con metodo principale
+            console.log('✅ [MANAGER-SYNC] Delayed database save successful');
+          } catch (retryError) {
+            console.log('⚠️ [MANAGER-SYNC] Delayed database save still failed');
+          }
+        }, 10000); // Retry dopo 10 secondi
+        
+      } else {
+        throw new Error('Both database and localStorage failed');
+      }
+
+      return newManager;
+
+    } catch (error: any) {
+      console.error('❌ [MANAGER-SYNC] Critical error in manager creation:', error);
+      
+      // Ultimo tentativo: almeno localStorage
+      if (!localStorageSuccess) {
+        try {
+          const currentManagers = { ...managers, [newManager.code]: newManager };
+          localStorage.setItem('managers', JSON.stringify(currentManagers));
+          setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
+          console.log('🆘 [MANAGER-SYNC] Emergency localStorage save successful');
+          return newManager;
+        } catch (emergencyError) {
+          console.error('💥 [MANAGER-SYNC] Emergency save also failed:', emergencyError);
+        }
+      }
+      
+      alert(`Errore nella creazione del gestore: ${error.message}\n\nDatabase: ${databaseSuccess ? 'OK' : 'FALLITO'}\nLocal: ${localStorageSuccess ? 'OK' : 'FALLITO'}`);
+      throw error;
+    }
+  };
+
+  // UPDATE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
+  const updateManagerWithSync = async (managerCode: string, updateData: Partial<Manager>) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) {
+      console.warn('⚠️ [MANAGER-SYNC] Manager not found for update:', managerCode);
+      return;
+    }
+
+    const updatedManager = { ...existingManager, ...updateData };
+    console.log('🔄 [MANAGER-SYNC] Updating manager with database-first approach...', updatedManager);
+
+    let databaseSuccess = false;
+    let localStorageSuccess = false;
+
+    try {
+      // ✅ STEP 1: PROVA DATABASE
+      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database update...');
+      
+      const updateMethods = [
+        async () => {
+          if (typeof ApiService?.updateManager === 'function') {
+            return await ApiService.updateManager(existingManager.id, updatedManager);
+          }
+          throw new Error('updateManager method not available');
+        },
+        
+        async () => {
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedManager)
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return await response.json();
+        }
+      ];
+
+      for (let i = 0; i < updateMethods.length; i++) {
+        try {
+          console.log(`📡 [MANAGER-SYNC] Trying update method ${i + 1}...`);
+          await updateMethods[i]();
+          console.log(`✅ [MANAGER-SYNC] Database update successful (method ${i + 1})`);
+          databaseSuccess = true;
+          break;
+        } catch (methodError: any) {
+          console.log(`⚠️ [MANAGER-SYNC] Update method ${i + 1} failed:`, methodError.message);
+        }
+      }
+
+      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
+      setManagers(prev => {
+        const updated = { ...prev, [managerCode]: updatedManager };
+        console.log('✅ [MANAGER-SYNC] Local state updated for manager:', managerCode);
+        return updated;
+      });
+
+      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
+      const currentManagers = { ...managers, [managerCode]: updatedManager };
+      localStorage.setItem('managers', JSON.stringify(currentManagers));
+      localStorageSuccess = true;
+      console.log('✅ [MANAGER-SYNC] localStorage update successful');
+
+      // ✅ STEP 4: BROADCAST SYNC
+      const syncEvent = new CustomEvent('managersUpdated', {
+        detail: { 
+          managers: currentManagers, 
+          action: 'updated', 
+          managerCode,
+          changes: updateData,
+          databaseSuccess,
+          timestamp: Date.now()
+        }
+      });
+      window.dispatchEvent(syncEvent);
+
+      // ✅ STEP 5: LOG ACTION
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_UPDATED',
+        `Gestore aggiornato: ${updatedManager.name} (${updatedManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}`,
+        'admin',
+        'admin',
+        { 
+          managerCode: updatedManager.code, 
+          changes: updateData,
+          databaseSuccess,
+          localStorageSuccess
+        }
+      );
+
+      console.log(`✅ [MANAGER-SYNC] Manager update completed - DB: ${databaseSuccess}, Local: ${localStorageSuccess}`);
+
+    } catch (error: any) {
+      console.error('❌ [MANAGER-SYNC] Error updating manager:', error);
+      alert(`Errore nell'aggiornamento del gestore: ${error.message}`);
+    }
+  };
+
+  // DELETE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
+  const deleteManagerWithSync = async (managerCode: string) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) {
+      console.warn('⚠️ [MANAGER-SYNC] Manager not found for deletion:', managerCode);
+      return;
+    }
+
+    console.log('🔄 [MANAGER-SYNC] Deleting manager with database-first approach...', managerCode);
+
+    let databaseSuccess = false;
+    let localStorageSuccess = false;
+
+    try {
+      // ✅ STEP 1: PROVA DATABASE
+      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database deletion...');
+      
+      const deleteMethods = [
+        async () => {
+          if (typeof ApiService?.deleteManager === 'function') {
+            return await ApiService.deleteManager(existingManager.id);
+          }
+          throw new Error('deleteManager method not available');
+        },
+        
+        async () => {
+          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
           return response.ok;
         }
       ];
@@ -1858,283 +2137,4 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       )}
     </div>
   );
-}.status}: ${response.statusText}`);
-          }
-          
-          return await response.json();
-        },
-        
-        // Metodo 3: Format semplificato
-        async () => {
-          const simplifiedManager = {
-            name: newManager.name,
-            code: newManager.code,
-            permissions: newManager.permissions,
-            isActive: newManager.isActive,
-            createdBy: newManager.createdBy
-          };
-          
-          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(simplifiedManager)
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          
-          return await response.json();
-        }
-      ];
-
-      // Prova tutti i metodi API
-      for (let i = 0; i < apiMethods.length; i++) {
-        try {
-          console.log(`📡 [MANAGER-SYNC] Trying API method ${i + 1} for creation...`);
-          await apiMethods[i]();
-          console.log(`✅ [MANAGER-SYNC] Database save successful (method ${i + 1})`);
-          databaseSuccess = true;
-          break;
-        } catch (methodError: any) {
-          console.log(`⚠️ [MANAGER-SYNC] API method ${i + 1} failed:`, methodError.message);
-          
-          // Se è l'ultimo metodo e fallisce
-          if (i === apiMethods.length - 1) {
-            console.warn('⚠️ [MANAGER-SYNC] All database methods failed, proceeding with localStorage');
-          }
-        }
-      }
-
-      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
-      console.log('🔄 [MANAGER-SYNC] Step 2: Updating local state...');
-      setManagers(prev => {
-        const updated = { ...prev, [newManager.code]: newManager };
-        console.log('✅ [MANAGER-SYNC] Local state updated:', Object.keys(updated).length, 'managers');
-        return updated;
-      });
-
-      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
-      console.log('🔄 [MANAGER-SYNC] Step 3: Saving to localStorage...');
-      const currentManagers = { ...managers, [newManager.code]: newManager };
-      localStorage.setItem('managers', JSON.stringify(currentManagers));
-      
-      // Verifica salvataggio
-      const verification = localStorage.getItem('managers');
-      if (verification) {
-        const parsed = JSON.parse(verification);
-        if (parsed[newManager.code]) {
-          localStorageSuccess = true;
-          console.log('✅ [MANAGER-SYNC] localStorage save successful');
-        }
-      }
-
-      // ✅ STEP 4: BROADCAST PER MULTI-DEVICE SYNC
-      console.log('🔄 [MANAGER-SYNC] Step 4: Broadcasting sync event...');
-      const syncEvent = new CustomEvent('managersUpdated', {
-        detail: { 
-          managers: currentManagers, 
-          action: 'created', 
-          managerCode: newManager.code,
-          databaseSuccess,
-          timestamp: Date.now()
-        }
-      });
-      window.dispatchEvent(syncEvent);
-
-      // ✅ STEP 5: LOG ACTION
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'MANAGER_CREATED',
-        `Gestore creato: ${newManager.name} (${newManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}, Local: ${localStorageSuccess ? 'OK' : 'FAIL'}`,
-        'admin',
-        'admin',
-        { 
-          managerCode: newManager.code, 
-          permissions: newManager.permissions,
-          databaseSuccess,
-          localStorageSuccess
-        }
-      );
-
-      // ✅ STEP 6: RISULTATO FINALE
-      if (databaseSuccess && localStorageSuccess) {
-        console.log('🎉 [MANAGER-SYNC] Manager created successfully (Database + localStorage)');
-      } else if (localStorageSuccess) {
-        console.log('⚠️ [MANAGER-SYNC] Manager created with localStorage only (Database failed)');
-        
-        // Schedule retry per database
-        setTimeout(async () => {
-          console.log('🔄 [MANAGER-SYNC] Retrying database save...');
-          try {
-            await apiMethods[0](); // Retry con metodo principale
-            console.log('✅ [MANAGER-SYNC] Delayed database save successful');
-          } catch (retryError) {
-            console.log('⚠️ [MANAGER-SYNC] Delayed database save still failed');
-          }
-        }, 10000); // Retry dopo 10 secondi
-        
-      } else {
-        throw new Error('Both database and localStorage failed');
-      }
-
-      return newManager;
-
-    } catch (error: any) {
-      console.error('❌ [MANAGER-SYNC] Critical error in manager creation:', error);
-      
-      // Ultimo tentativo: almeno localStorage
-      if (!localStorageSuccess) {
-        try {
-          const currentManagers = { ...managers, [newManager.code]: newManager };
-          localStorage.setItem('managers', JSON.stringify(currentManagers));
-          setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
-          console.log('🆘 [MANAGER-SYNC] Emergency localStorage save successful');
-          return newManager;
-        } catch (emergencyError) {
-          console.error('💥 [MANAGER-SYNC] Emergency save also failed:', emergencyError);
-        }
-      }
-      
-      alert(`Errore nella creazione del gestore: ${error.message}\n\nDatabase: ${databaseSuccess ? 'OK' : 'FALLITO'}\nLocal: ${localStorageSuccess ? 'OK' : 'FALLITO'}`);
-      throw error;
-    }
-  };
-
-  // UPDATE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
-  const updateManagerWithSync = async (managerCode: string, updateData: Partial<Manager>) => {
-    const existingManager = managers[managerCode];
-    if (!existingManager) {
-      console.warn('⚠️ [MANAGER-SYNC] Manager not found for update:', managerCode);
-      return;
-    }
-
-    const updatedManager = { ...existingManager, ...updateData };
-    console.log('🔄 [MANAGER-SYNC] Updating manager with database-first approach...', updatedManager);
-
-    let databaseSuccess = false;
-    let localStorageSuccess = false;
-
-    try {
-      // ✅ STEP 1: PROVA DATABASE
-      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database update...');
-      
-      const updateMethods = [
-        async () => {
-          if (typeof ApiService?.updateManager === 'function') {
-            return await ApiService.updateManager(existingManager.id, updatedManager);
-          }
-          throw new Error('updateManager method not available');
-        },
-        
-        async () => {
-          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedManager)
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          
-          return await response.json();
-        }
-      ];
-
-      for (let i = 0; i < updateMethods.length; i++) {
-        try {
-          console.log(`📡 [MANAGER-SYNC] Trying update method ${i + 1}...`);
-          await updateMethods[i]();
-          console.log(`✅ [MANAGER-SYNC] Database update successful (method ${i + 1})`);
-          databaseSuccess = true;
-          break;
-        } catch (methodError: any) {
-          console.log(`⚠️ [MANAGER-SYNC] Update method ${i + 1} failed:`, methodError.message);
-        }
-      }
-
-      // ✅ STEP 2: AGGIORNA STATO LOCALE (SEMPRE)
-      setManagers(prev => {
-        const updated = { ...prev, [managerCode]: updatedManager };
-        console.log('✅ [MANAGER-SYNC] Local state updated for manager:', managerCode);
-        return updated;
-      });
-
-      // ✅ STEP 3: SALVA IN LOCALSTORAGE (SEMPRE)
-      const currentManagers = { ...managers, [managerCode]: updatedManager };
-      localStorage.setItem('managers', JSON.stringify(currentManagers));
-      localStorageSuccess = true;
-      console.log('✅ [MANAGER-SYNC] localStorage update successful');
-
-      // ✅ STEP 4: BROADCAST SYNC
-      const syncEvent = new CustomEvent('managersUpdated', {
-        detail: { 
-          managers: currentManagers, 
-          action: 'updated', 
-          managerCode,
-          changes: updateData,
-          databaseSuccess,
-          timestamp: Date.now()
-        }
-      });
-      window.dispatchEvent(syncEvent);
-
-      // ✅ STEP 5: LOG ACTION
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'MANAGER_UPDATED',
-        `Gestore aggiornato: ${updatedManager.name} (${updatedManager.code}) - DB: ${databaseSuccess ? 'OK' : 'FAIL'}`,
-        'admin',
-        'admin',
-        { 
-          managerCode: updatedManager.code, 
-          changes: updateData,
-          databaseSuccess,
-          localStorageSuccess
-        }
-      );
-
-      console.log(`✅ [MANAGER-SYNC] Manager update completed - DB: ${databaseSuccess}, Local: ${localStorageSuccess}`);
-
-    } catch (error: any) {
-      console.error('❌ [MANAGER-SYNC] Error updating manager:', error);
-      alert(`Errore nell'aggiornamento del gestore: ${error.message}`);
-    }
-  };
-
-  // DELETE MANAGER - DATABASE FIRST + LOCALSTORAGE BACKUP
-  const deleteManagerWithSync = async (managerCode: string) => {
-    const existingManager = managers[managerCode];
-    if (!existingManager) {
-      console.warn('⚠️ [MANAGER-SYNC] Manager not found for deletion:', managerCode);
-      return;
-    }
-
-    console.log('🔄 [MANAGER-SYNC] Deleting manager with database-first approach...', managerCode);
-
-    let databaseSuccess = false;
-    let localStorageSuccess = false;
-
-    try {
-      // ✅ STEP 1: PROVA DATABASE
-      console.log('📡 [MANAGER-SYNC] Step 1: Attempting database deletion...');
-      
-      const deleteMethods = [
-        async () => {
-          if (typeof ApiService?.deleteManager === 'function') {
-            return await ApiService.deleteManager(existingManager.id);
-          }
-          throw new Error('deleteManager method not available');
-        },
-        
-        async () => {
-          const response = await fetch(`${ApiService.baseURL || 'https://warzone-tournament-api-xfut.onrender.com'}/api/managers/${existingManager.id}`, {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response
+}
