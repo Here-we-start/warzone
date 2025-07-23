@@ -111,11 +111,6 @@ export default function ScoreAssignment({
 
     // Rimuovi partite esistenti per questo match number
     const existingMatches = getExistingMatchData(selectedMatch);
-    setMatches(prev => prev.filter(match => 
-      !existingMatches.some(existing => existing.id === match.id)
-    ));
-
-    // Aggiungi nuove partite
     const newMatches = matchEntries.map(entry => ({
       id: `match-${selectedMatch}-${entry.teamCode}-${Date.now()}`,
       position: entry.position,
@@ -130,7 +125,38 @@ export default function ScoreAssignment({
       tournamentId: tournament.id
     }));
 
-    setMatches(prev => [...prev, ...newMatches]);
+    // Usa syncOperation per sincronizzazione robusta
+    const updatedMatches = matches.filter(match => 
+      !existingMatches.some(existing => existing.id === match.id)
+    ).concat(newMatches);
+
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        setMatches(prev => prev.filter(match => 
+          !existingMatches.some(existing => existing.id === match.id)
+        ));
+        setMatches(prev => [...prev, ...newMatches]);
+      },
+      apiCall: async () => {
+        // Elimina partite esistenti
+        for (const match of existingMatches) {
+          await ApiService.deleteMatch(match.id);
+        }
+        // Crea nuove partite
+        for (const match of newMatches) {
+          await ApiService.createMatch(match);
+        }
+        return { success: true };
+      },
+      storageKey: 'matches',
+      storageData: updatedMatches,
+      operationName: `Match ${selectedMatch} Score Assignment`
+    });
+
+    if (!syncResult.success) {
+      console.warn('⚠️ Score assignment saved locally, database sync failed:', syncResult.error);
+      alert('⚠️ Punteggi salvati localmente. Sincronizzazione database fallita, ma i punteggi funzioneranno ugualmente.');
+    }
 
     // Log action
     logAction(
@@ -157,9 +183,31 @@ export default function ScoreAssignment({
     if (!confirm(`Sei sicuro di voler eliminare tutti i punteggi della Partita ${matchNumber}?`)) return;
 
     const existingMatches = getExistingMatchData(matchNumber);
-    setMatches(prev => prev.filter(match => 
+    const updatedMatches = matches.filter(match => 
       !existingMatches.some(existing => existing.id === match.id)
-    ));
+    );
+
+    // Sincronizza con database
+    const syncResult = await ApiService.syncOperation({
+      localUpdate: () => {
+        setMatches(prev => prev.filter(match => 
+          !existingMatches.some(existing => existing.id === match.id)
+        ));
+      },
+      apiCall: async () => {
+        for (const match of existingMatches) {
+          await ApiService.deleteMatch(match.id);
+        }
+        return { success: true };
+      },
+      storageKey: 'matches',
+      storageData: updatedMatches,
+      operationName: `Match ${matchNumber} Deletion`
+    });
+
+    if (!syncResult.success) {
+      console.warn('⚠️ Match deleted locally, database sync failed:', syncResult.error);
+    }
 
     // Log action
     logAction(
