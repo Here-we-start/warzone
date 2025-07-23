@@ -6,7 +6,8 @@
 +  onSave?: (multipliers: Record<number, number>) => void;
  }
  
- const DEFAULT_MULTIPLIERS = {
+ const DEFAULT}
+_MULTIPLIERS = {
 @@ .. @@
  export default function MultiplierSettings({ isOpen, onClose }: MultiplierSettingsProps) {
 +export default function MultiplierSettings({ 
