@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, Key, Bell, AlertTriangle, Menu, X, Archive, UserPlus, Eye, Shield, Plus, Play, Copy, Tv, Upload, Target } from 'lucide-react';
+import { Users, Trophy, Settings, Download, Image, RotateCcw, Sliders, Clock, Key, Bell, AlertTriangle, Menu, X, Archive, UserPlus, Eye, Shield, Plus, Copy, Tv, Target } from 'lucide-react';
 import GlassPanel from './GlassPanel';
 import TournamentCreator from './TournamentCreator';
 import MultiplierSettings from './MultiplierSettings';
-import ManualSubmission from './ManualSubmission';
 import PendingSubmissions from './PendingSubmissions';
 import TeamCodeDisplay from './TeamCodeDisplay';
 import PenaltiesRewards from './PenaltiesRewards';
@@ -46,7 +45,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showTeamCode, setShowTeamCode] = useState<{ name: string; code: string } | null>(null);
   const [showLoginCodes, setShowLoginCodes] = useState(false);
   const [showOBSPlugin, setShowOBSPlugin] = useState(false);
-  const [showManualSubmission, setShowManualSubmission] = useState(false);
   const [showScoreAssignment, setShowScoreAssignment] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -819,51 +817,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     );
   };
 
-  const handleManualSubmission = async (submission: Omit<PendingSubmission, 'id' | 'submittedAt'>) => {
-    const newSubmission: PendingSubmission = {
-      ...submission,
-      id: `manual-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      submittedAt: Date.now()
-    };
-
-    console.log('🔄 [MULTI-DEVICE] Adding manual submission with database sync...');
-
-    try {
-      // Update database first
-      if (typeof ApiService?.createPendingSubmission === 'function') {
-        await ApiService.createPendingSubmission(newSubmission);
-        console.log('✅ [MULTI-DEVICE] Manual submission added to database');
-      }
-
-      // Update local state
-      setPendingSubmissions(prev => [...prev, newSubmission]);
-
-      // Update localStorage
-      const updatedPending = [...pendingSubmissions, newSubmission];
-      localStorage.setItem('pendingSubmissions', JSON.stringify(updatedPending));
-
-      console.log('✅ [MULTI-DEVICE] Manual submission synced across all devices');
-
-    } catch (error: any) {
-      console.warn('⚠️ [MULTI-DEVICE] Database sync failed, updating locally:', error.message);
-      
-      // Fallback: update locally even if database fails
-      setPendingSubmissions(prev => [...prev, newSubmission]);
-    }
-
-    // Log action
-    logAction(
-      auditLogs,
-      setAuditLogs,
-      'MANUAL_SUBMISSION',
-      `Inserimento manuale per ${submission.teamName}: ${submission.position}° posto, ${submission.kills} kills`,
-      'admin',
-      'admin',
-      { teamCode: submission.teamCode, tournamentId: submission.tournamentId }
-    );
-  };
-
-  // ✅ NUOVE FUNZIONI PER ASSEGNAZIONE PUNTEGGI MANUALE - POSIZIONE CORRETTA
+  // ✅ NUOVE FUNZIONI PER ASSEGNAZIONE PUNTEGGI MANUALE
 
   // Handle manual score update
   const handleManualScoreUpdate = async (teamCode: string, matchNumber: number, scoreData: any) => {
@@ -995,6 +949,165 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
   };
 
+  // ✅ NUOVE FUNZIONI MANAGER CON DATABASE SYNC
+
+  // CREATE MANAGER WITH DATABASE SYNC
+  const createManagerWithSync = async (managerData: Omit<Manager, 'id' | 'createdAt'>) => {
+    const newManager: Manager = {
+      ...managerData,
+      id: `mgr-${Date.now()}`,
+      createdAt: Date.now()
+    };
+
+    console.log('🔄 [MANAGER-SYNC] Creating manager with database sync...', newManager);
+
+    try {
+      // Update database first
+      if (typeof ApiService?.createManager === 'function') {
+        await ApiService.createManager(newManager);
+        console.log('✅ [MANAGER-SYNC] Manager created in database');
+      }
+
+      // Update local state
+      setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
+
+      // Update localStorage
+      const updatedManagers = { ...managers, [newManager.code]: newManager };
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+
+      console.log('✅ [MANAGER-SYNC] Manager synced across all devices');
+
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_CREATED',
+        `Gestore creato: ${newManager.name} (${newManager.code})`,
+        'admin',
+        'admin',
+        { managerCode: newManager.code, permissions: newManager.permissions }
+      );
+
+      return newManager;
+
+    } catch (error: any) {
+      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setManagers(prev => ({ ...prev, [newManager.code]: newManager }));
+      
+      // Update localStorage
+      const updatedManagers = { ...managers, [newManager.code]: newManager };
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+      
+      return newManager;
+    }
+  };
+
+  // UPDATE MANAGER WITH DATABASE SYNC
+  const updateManagerWithSync = async (managerCode: string, updateData: Partial<Manager>) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) return;
+
+    const updatedManager = { ...existingManager, ...updateData };
+
+    console.log('🔄 [MANAGER-SYNC] Updating manager with database sync...', updatedManager);
+
+    try {
+      // Update database first
+      if (typeof ApiService?.updateManager === 'function') {
+        await ApiService.updateManager(existingManager.id, updatedManager);
+        console.log('✅ [MANAGER-SYNC] Manager updated in database');
+      }
+
+      // Update local state
+      setManagers(prev => ({ ...prev, [managerCode]: updatedManager }));
+
+      // Update localStorage
+      const updatedManagers = { ...managers, [managerCode]: updatedManager };
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+
+      console.log('✅ [MANAGER-SYNC] Manager update synced across all devices');
+
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_UPDATED',
+        `Gestore aggiornato: ${updatedManager.name} (${updatedManager.code})`,
+        'admin',
+        'admin',
+        { managerCode: updatedManager.code, changes: updateData }
+      );
+
+    } catch (error: any) {
+      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setManagers(prev => ({ ...prev, [managerCode]: updatedManager }));
+      
+      // Update localStorage
+      const updatedManagers = { ...managers, [managerCode]: updatedManager };
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+    }
+  };
+
+  // DELETE MANAGER WITH DATABASE SYNC
+  const deleteManagerWithSync = async (managerCode: string) => {
+    const existingManager = managers[managerCode];
+    if (!existingManager) return;
+
+    console.log('🔄 [MANAGER-SYNC] Deleting manager with database sync...', managerCode);
+
+    try {
+      // Update database first
+      if (typeof ApiService?.deleteManager === 'function') {
+        await ApiService.deleteManager(existingManager.id);
+        console.log('✅ [MANAGER-SYNC] Manager deleted from database');
+      }
+
+      // Update local state
+      setManagers(prev => {
+        const updated = { ...prev };
+        delete updated[managerCode];
+        return updated;
+      });
+
+      // Update localStorage
+      const updatedManagers = { ...managers };
+      delete updatedManagers[managerCode];
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+
+      console.log('✅ [MANAGER-SYNC] Manager deletion synced across all devices');
+
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'MANAGER_DELETED',
+        `Gestore eliminato: ${existingManager.name} (${existingManager.code})`,
+        'admin',
+        'admin',
+        { managerCode: existingManager.code }
+      );
+
+    } catch (error: any) {
+      console.warn('⚠️ [MANAGER-SYNC] Database sync failed, updating locally:', error.message);
+      
+      // Fallback: update locally even if database fails
+      setManagers(prev => {
+        const updated = { ...prev };
+        delete updated[managerCode];
+        return updated;
+      });
+      
+      // Update localStorage
+      const updatedManagers = { ...managers };
+      delete updatedManagers[managerCode];
+      localStorage.setItem('managers', JSON.stringify(updatedManagers));
+    }
+  };
+
   const copyToClipboard = async (text: string, id?: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1035,375 +1148,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   // Get pending submissions count
   const totalPendingCount = pendingSubmissions.length;
 
-  const createBlackCrowDemo = () => {
-    const demoId = `blackcrow-${Date.now()}`;
-    const now = new Date();
-    
-    // Create the Black Crow Scrim tournament
-    const blackCrowTournament: Tournament = {
-      id: demoId,
-      name: 'Black Crow Scrim',
-      type: 'Ritorno',
-      status: 'active',
-      startTime: '20:00',
-      startDate: now.toISOString().split('T')[0],
-      createdAt: Date.now(),
-      createdBy: 'admin',
-      assignedManagers: ['Overwatch2025'],
-      settings: { lobbies: 1, slotsPerLobby: 15, totalMatches: 4, countedMatches: 3 },
-      isDemo: true
-    };
-
-    setTournaments(prev => ({ ...prev, [demoId]: blackCrowTournament }));
-
-    // Create demo manager
-    const demoManager: Manager = {
-      id: 'mgr-overwatch',
-      name: 'Gestore Demo',
-      code: 'Overwatch2025',
-      permissions: ['scores', 'pending', 'adjustments', 'multipliers'],
-      createdAt: Date.now(),
-      createdBy: 'admin',
-      isActive: true
-    };
-
-    setManagers(prev => ({ ...prev, ['Overwatch2025']: demoManager }));
-
-    // All 15 Black Crow team names from JSON
-    const blackCrowTeams = [
-      'BlackCrow Sayan', 'BlackCrow Slide', 'BlackCrow Omega', 'BlackCrow Eclipse',
-      'BlackCrow Beta', 'BlackCrow Alpha', 'BlackCrow Hydra', 'BlackCrow Shadow',
-      'BlackCrow Storm', 'BlackCrow Neo', 'BlackCrow Nova', 'BlackCrow Venom',
-      'BlackCrow Ghost', 'BlackCrow Prime', 'BlackCrow Joker'
-    ];
-
-    // Create teams with codes
-    const teamCodes: Record<string, string> = {};
-    blackCrowTeams.forEach((teamName, index) => {
-      const code = generateUniqueTeamCode(teams);
-      const key = `${demoId}-Lobby1-Slot${index + 1}`;
-      
-      const team: Team = {
-        id: key,
-        name: teamName,
-        code,
-        lobby: key,
-        lobbyNumber: 1,
-        createdAt: Date.now(),
-        tournamentId: demoId,
-        clanName: teamName,
-        playerName: teamName.replace('BlackCrow ', '')
-      };
-
-      setTeams(prev => ({ ...prev, [key]: team }));
-      teamCodes[teamName] = code;
-    });
-
-    // Complete match data from JSON with ALL teams and their exact scores
-    const matchData = [
-      {
-        match_number: 1,
-        scores: {
-          'BlackCrow Sayan': 38, 'BlackCrow Slide': 34, 'BlackCrow Omega': 33,
-          'BlackCrow Eclipse': 30, 'BlackCrow Ghost': 27, 'BlackCrow Neo': 24,
-          'BlackCrow Storm': 0,
-          // Adding scores for remaining teams (realistic distribution)
-          'BlackCrow Beta': 22, 'BlackCrow Alpha': 20, 'BlackCrow Hydra': 18,
-          'BlackCrow Shadow': 16, 'BlackCrow Nova': 14, 'BlackCrow Venom': 12,
-          'BlackCrow Prime': 10, 'BlackCrow Joker': 8
-        }
-      },
-      {
-        match_number: 2,
-        scores: {
-          'BlackCrow Sayan': 32, 'BlackCrow Slide': 30, 'BlackCrow Omega': 28,
-          'BlackCrow Ghost': 25, 'BlackCrow Eclipse': 24, 'BlackCrow Neo': 22,
-          'BlackCrow Storm': 0,
-          // Match 2 scores for remaining teams
-          'BlackCrow Alpha': 20, 'BlackCrow Beta': 19, 'BlackCrow Hydra': 17,
-          'BlackCrow Shadow': 15, 'BlackCrow Nova': 13, 'BlackCrow Prime': 11,
-          'BlackCrow Venom': 9, 'BlackCrow Joker': 7
-        }
-      },
-      {
-        match_number: 3,
-        scores: {
-          'BlackCrow Sayan': 28, 'BlackCrow Slide': 27, 'BlackCrow Ghost': 26,
-          'BlackCrow Eclipse': 22, 'BlackCrow Omega': 21, 'BlackCrow Neo': 23,
-          'BlackCrow Storm': 0,
-          // Match 3 scores for remaining teams
-          'BlackCrow Alpha': 19, 'BlackCrow Beta': 18, 'BlackCrow Hydra': 16,
-          'BlackCrow Nova': 14, 'BlackCrow Shadow': 13, 'BlackCrow Prime': 12,
-          'BlackCrow Venom': 10, 'BlackCrow Joker': 9
-        }
-      }
-    ];
-
-    // Create matches for completed games with exact scores for ALL teams
-    matchData.forEach((matchInfo, matchIndex) => {
-      Object.entries(matchInfo.scores).forEach(([teamName, score]) => {
-        if (teamCodes[teamName]) {
-          // For BlackCrow Storm (disqualified), create matches with 0 score
-          if (teamName === 'BlackCrow Storm') {
-            const match: Match = {
-              id: `blackcrow-${teamCodes[teamName]}-${matchIndex + 1}`,
-              position: 20, // Last position
-              kills: 0,
-              score: 0,
-              teamCode: teamCodes[teamName],
-              photos: [`demo-photo-${matchIndex + 1}-1.jpg`, `demo-photo-${matchIndex + 1}-2.jpg`],
-              status: 'approved',
-              submittedAt: Date.now() - ((3 - matchIndex) * 3600000),
-              reviewedAt: Date.now() - ((3 - matchIndex) * 3600000),
-              reviewedBy: 'Overwatch2025',
-              tournamentId: demoId
-            };
-            setMatches(prev => [...prev, match]);
-          } else if (score > 0) {
-            // Calculate realistic position and kills from exact score
-            let position: number;
-            let kills: number;
-            
-            // Reverse engineer position and kills from score using multipliers
-            if (score >= 30) {
-              position = Math.floor(Math.random() * 3) + 1; // 1-3rd place
-              kills = Math.round(score / (multipliers[position] || 2));
-            } else if (score >= 20) {
-              position = Math.floor(Math.random() * 5) + 4; // 4-8th place
-              kills = Math.round(score / (multipliers[position] || 1.4));
-            } else if (score >= 10) {
-              position = Math.floor(Math.random() * 5) + 9; // 9-13th place
-              kills = Math.round(score / (multipliers[position] || 1));
-            } else {
-              position = Math.floor(Math.random() * 3) + 14; // 14-16th place
-              kills = Math.round(score / (multipliers[position] || 1));
-            }
-            
-            const match: Match = {
-              id: `blackcrow-${teamCodes[teamName]}-${matchIndex + 1}`,
-              position,
-              kills,
-              score,
-              teamCode: teamCodes[teamName],
-              photos: [`demo-photo-${matchIndex + 1}-1.jpg`, `demo-photo-${matchIndex + 1}-2.jpg`],
-              status: 'approved',
-              submittedAt: Date.now() - ((3 - matchIndex) * 3600000),
-              reviewedAt: Date.now() - ((3 - matchIndex) * 3600000),
-              reviewedBy: 'Overwatch2025',
-              tournamentId: demoId
-            };
-
-            setMatches(prev => [...prev, match]);
-          }
-        }
-      });
-    });
-
-    // Add exact bonuses and penalties from JSON
-    const adjustments = [
-      {
-        teamName: 'BlackCrow Ghost',
-        points: 3,
-        reason: 'Ucciso con arma vietata',
-        type: 'reward' as const
-      },
-      {
-        teamName: 'BlackCrow Neo',
-        points: -7,
-        reason: '1ª infrazione',
-        type: 'penalty' as const
-      }
-    ];
-
-    adjustments.forEach(adj => {
-      if (teamCodes[adj.teamName]) {
-        const adjustment: ScoreAdjustment = {
-          id: `blackcrow-adj-${teamCodes[adj.teamName]}`,
-          teamCode: teamCodes[adj.teamName],
-          teamName: adj.teamName,
-          points: adj.points,
-          reason: adj.reason,
-          type: adj.type,
-          appliedAt: Date.now() - 1800000, // 30 minutes ago
-          appliedBy: 'Overwatch2025',
-          tournamentId: demoId
-        };
-
-        setScoreAdjustments(prev => [...prev, adjustment]);
-      }
-    });
-
-    // Add pending submissions for the 4th match (more teams waiting for approval)
-    const pendingTeams = [
-      { name: 'BlackCrow Sayan', position: 2, kills: 15 },
-      { name: 'BlackCrow Slide', position: 3, kills: 12 },
-      { name: 'BlackCrow Ghost', position: 1, kills: 18 },
-      { name: 'BlackCrow Eclipse', position: 5, kills: 10 },
-      { name: 'BlackCrow Omega', position: 4, kills: 11 },
-      { name: 'BlackCrow Alpha', position: 6, kills: 9 },
-      { name: 'BlackCrow Beta', position: 7, kills: 8 },
-      { name: 'BlackCrow Hydra', position: 8, kills: 7 },
-      { name: 'BlackCrow Nova', position: 9, kills: 6 },
-      { name: 'BlackCrow Prime', position: 10, kills: 5 }
-    ];
-
-    pendingTeams.forEach(team => {
-      if (teamCodes[team.name]) {
-        const pendingSubmission: PendingSubmission = {
-          id: `blackcrow-pending-${teamCodes[team.name]}-4`,
-          teamCode: teamCodes[team.name],
-          teamName: team.name,
-          position: team.position,
-          kills: team.kills,
-          photos: [`pending-match4-1.jpg`, `pending-match4-2.jpg`],
-          submittedAt: Date.now() - (Math.random() * 900000), // Last 15 minutes
-          tournamentId: demoId
-        };
-
-        setPendingSubmissions(prev => [...prev, pendingSubmission]);
-      }
-    });
-
-    // Add realistic audit log entries from JSON
-    const auditEntries = [
-      {
-        action: 'TOURNAMENT_CREATED',
-        details: 'Torneo demo "Black Crow Scrim" creato con tutte le 15 squadre BlackCrow',
-        performedBy: 'admin',
-        performedByType: 'admin' as const,
-        timestamp: Date.now() - 14400000 // 4 hours ago
-      },
-      {
-        action: 'MANAGER_ASSIGNED',
-        details: 'Gestore Demo (Overwatch2025) assegnato al torneo Black Crow Scrim',
-        performedBy: 'admin',
-        performedByType: 'admin' as const,
-        timestamp: Date.now() - 14000000
-      },
-      {
-        action: 'TEAMS_REGISTERED',
-        details: 'Registrate tutte le 15 squadre BlackCrow: Sayan, Slide, Omega, Eclipse, Beta, Alpha, Hydra, Shadow, Storm, Neo, Nova, Venom, Ghost, Prime, Joker',
-        performedBy: 'admin',
-        performedByType: 'admin' as const,
-        timestamp: Date.now() - 13800000
-      },
-      {
-        action: 'SUBMISSION_APPROVED',
-        details: 'Approvato punteggi Match 1 per tutte le 15 squadre - BlackCrow Sayan in testa con 38 punti',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 10800000 // 3 hours ago
-      },
-      {
-        action: 'SUBMISSION_APPROVED',
-        details: 'Approvato punteggi Match 2 per tutte le 15 squadre - BlackCrow Sayan mantiene il comando',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 7200000 // 2 hours ago
-      },
-      {
-        action: 'SUBMISSION_APPROVED',
-        details: 'Approvato punteggi Match 3 per tutte le 15 squadre - Classifica sempre più serrata',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 3600000 // 1 hour ago
-      },
-      {
-        action: 'SCORE_ADJUSTMENT',
-        details: 'Ricompensa applicata a BlackCrow Ghost: +3 punti - Ucciso con arma vietata',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 1800000 // 30 minutes ago
-      },
-      {
-        action: 'SCORE_ADJUSTMENT',
-        details: 'Penalità applicata a BlackCrow Neo: -7 punti - 1ª infrazione',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 1200000 // 20 minutes ago
-      },
-      {
-        action: 'TEAM_DISQUALIFIED',
-        details: 'BlackCrow Storm squalificato per 2ª infrazione - 0 punti in tutte le partite',
-        performedBy: 'Overwatch2025',
-        performedByType: 'manager' as const,
-        timestamp: Date.now() - 600000 // 10 minutes ago
-      },
-      {
-        action: 'MATCH_4_SUBMISSIONS',
-        details: '10 squadre hanno già inviato i punteggi per la 4ª partita - In attesa di approvazione',
-        performedBy: 'system',
-        performedByType: 'admin' as const,
-        timestamp: Date.now() - 300000 // 5 minutes ago
-      }
-    ];
-
-    auditEntries.forEach((entry, index) => {
-      const auditLog: AuditLog = {
-        id: `blackcrow-audit-${index}`,
-        action: entry.action,
-        details: entry.details,
-        performedBy: entry.performedBy,
-        performedByType: entry.performedByType,
-        timestamp: entry.timestamp,
-        tournamentId: demoId
-      };
-
-      setAuditLogs(prev => [auditLog, ...prev]);
-    });
-
-    setSelectedTournament(demoId);
-    setActiveTab('tournaments');
-  };
-
-  const stopDemo = () => {
-    const demoTournaments = Object.values(tournaments).filter(t => t.isDemo);
-    
-    demoTournaments.forEach(demo => {
-      // Remove demo tournament
-      setTournaments(prev => {
-        const newTournaments = { ...prev };
-        delete newTournaments[demo.id];
-        return newTournaments;
-      });
-
-      // Remove demo teams
-      const demoTeams = Object.values(teams).filter(team => team.tournamentId === demo.id);
-      demoTeams.forEach(team => {
-        setTeams(prev => {
-          const newTeams = { ...prev };
-          delete newTeams[team.id];
-          return newTeams;
-        });
-      });
-
-      // Remove demo matches
-      setMatches(prev => prev.filter(match => match.tournamentId !== demo.id));
-
-      // Remove demo adjustments
-      setScoreAdjustments(prev => prev.filter(adj => adj.tournamentId !== demo.id));
-
-      // Remove demo pending submissions
-      setPendingSubmissions(prev => prev.filter(sub => sub.tournamentId !== demo.id));
-
-      // Remove demo managers
-      setManagers(prev => {
-        const newManagers = { ...prev };
-        delete newManagers['Overwatch2025'];
-        return newManagers;
-      });
-
-      // Remove demo audit logs
-      setAuditLogs(prev => prev.filter(log => log.tournamentId !== demo.id));
-    });
-
-    setSelectedTournament('');
-  };
-
   const tabItems = [
     { id: 'tournaments', label: 'TORNEI', icon: Trophy },
     { id: 'scores', label: 'ASSEGNA PUNTEGGI', icon: Target },
     { id: 'pending', label: 'APPROVAZIONI', icon: Clock, badge: teamsWithPendingCount, count: totalPendingCount },
+    { id: 'managers', label: 'GESTORI', icon: UserPlus },
     { id: 'audit', label: 'AUDIT LOG', icon: Eye },
     { id: 'archive', label: 'ARCHIVIO', icon: Archive }
   ];
@@ -1487,29 +1236,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">CREA TORNEO</span>
               </button>
-              <button
-                onClick={() => selectedTournament ? setShowManualSubmission(true) : alert('Seleziona prima un torneo')}
-                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-orange-500/20 border border-orange-500/50 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-colors font-mono text-xs sm:text-sm"
-              >
-                <Upload className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">INSERIMENTO MANUALE</span>
-              </button>
-              <button
-                onClick={createBlackCrowDemo}
-                className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs sm:text-sm"
-              >
-                <Play className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="hidden sm:inline">BLACK CROW</span>
-              </button>
-              {Object.values(tournaments).some(t => t.isDemo) && (
-                <button
-                  onClick={stopDemo}
-                  className="hidden sm:flex items-center space-x-2 px-3 sm:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors font-mono text-xs sm:text-sm"
-                >
-                  <X className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">STOP DEMO</span>
-                </button>
-              )}
+              
               <button
                 onClick={onLogout}
                 className="px-2 sm:px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors font-mono text-xs sm:text-sm"
@@ -1570,29 +1297,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <Tv className="w-4 h-4" />
                 <span>OBS STREAMING</span>
               </button>
-              <button
-                onClick={() => selectedTournament ? setShowManualSubmission(true) : alert('Seleziona prima un torneo')}
-                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-orange-500/20 border border-orange-500/50 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-colors font-mono text-xs"
-              >
-                <Upload className="w-4 h-4" />
-                <span>INSERIMENTO MANUALE</span>
-              </button>
-              <button
-                onClick={createBlackCrowDemo}
-                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-xs"
-              >
-                <Play className="w-4 h-4" />
-                <span>BLACK CROW DEMO</span>
-              </button>
-              {Object.values(tournaments).some(t => t.isDemo) && (
-                <button
-                  onClick={stopDemo}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors font-mono text-xs"
-                >
-                  <X className="w-4 h-4" />
-                  <span>INTERROMPI DEMO</span>
-                </button>
-              )}
             </div>
           </GlassPanel>
         )}
@@ -1631,21 +1335,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     </div>
                   ) : (
                     activeTournaments.map(tournament => (
-                      <div key={tournament.id} className={`p-4 border rounded-lg relative ${
-                        tournament.isDemo 
-                          ? 'bg-purple-500/10 border-purple-500/30' 
-                          : 'bg-black/20 border-ice-blue/20'
-                      }`}>
-                        {tournament.isDemo && (
-                          <div className="absolute top-2 right-2 px-2 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-xs font-mono">
-                            DEMO
-                          </div>
-                        )}
-                        {tournament.name === 'Black Crow Scrim' && (
-                          <div className="absolute top-2 left-2 px-2 py-1 bg-orange-500/20 border border-orange-500/50 text-orange-400 rounded text-xs font-mono animate-pulse">
-                            ⚠️ In attesa della 4ª partita
-                          </div>
-                        )}
+                      <div key={tournament.id} className="p-4 border rounded-lg bg-black/20 border-ice-blue/20">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-white font-bold font-mono">{tournament.name}</div>
@@ -1676,22 +1366,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     <Plus className="w-5 h-5" />
                     <span>Crea Nuovo Torneo</span>
                   </button>
-                  <button
-                    onClick={createBlackCrowDemo}
-                    className="w-full flex items-center space-x-3 p-4 bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded-lg hover:bg-purple-500/20 transition-colors font-mono"
-                  >
-                    <Play className="w-5 h-5" />
-                    <span>Avvia Black Crow Demo</span>
-                  </button>
-                  {Object.values(tournaments).some(t => t.isDemo) && (
-                    <button
-                      onClick={stopDemo}
-                      className="w-full flex items-center space-x-3 p-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors font-mono"
-                    >
-                      <X className="w-5 h-5" />
-                      <span>Interrompi Dimostrazione</span>
-                    </button>
-                  )}
                   <button
                     onClick={debugDatabaseConnection}
                     className="w-full flex items-center space-x-3 p-4 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 rounded-lg hover:bg-yellow-500/20 transition-colors font-mono"
@@ -1765,9 +1439,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </div>
               </div>
 
-              {/* ✅ SEMPRE MOSTRA LA SELEZIONE TORNEO */}
+              {/* Tournament Selection */}
               <div className="space-y-4">
-                {/* Tournament Selection */}
                 <div className="p-4 bg-ice-blue/10 border border-ice-blue/30 rounded-lg">
                   <h3 className="text-white font-mono font-bold mb-4">SELEZIONA TORNEO</h3>
                   
@@ -1775,22 +1448,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     <div className="text-center py-8">
                       <Trophy className="w-12 h-12 mx-auto text-ice-blue/50 mb-4" />
                       <p className="text-ice-blue/60 font-mono mb-4">Nessun torneo attivo disponibile</p>
-                      <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                        <button
-                          onClick={() => setShowTournamentCreator(true)}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 border border-green-500/50 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors font-mono text-sm"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>CREA TORNEO</span>
-                        </button>
-                        <button
-                          onClick={createBlackCrowDemo}
-                          className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors font-mono text-sm"
-                        >
-                          <Play className="w-4 h-4" />
-                          <span>DEMO BLACK CROW</span>
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => setShowTournamentCreator(true)}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 border border-green-500/50 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors font-mono text-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>CREA TORNEO</span>
+                      </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1820,11 +1484,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                               </div>
                             )}
                           </div>
-                          {tournament.isDemo && (
-                            <div className="mt-2 px-2 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-xs font-mono inline-block">
-                              DEMO
-                            </div>
-                          )}
                         </button>
                       ))}
                     </div>
@@ -1879,9 +1538,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     {/* Quick Actions */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <button
-                        onClick={() => {
-                          setActiveTab('pending');
-                        }}
+                        onClick={() => setActiveTab('pending')}
                         className="flex items-center justify-center space-x-2 p-3 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-lg hover:bg-orange-500/20 transition-colors font-mono text-sm"
                       >
                         <Clock className="w-4 h-4" />
@@ -1893,17 +1550,15 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         )}
                       </button>
                       <button
-                        onClick={() => setShowManualSubmission(true)}
+                        onClick={() => setActiveTab('managers')}
                         className="flex items-center justify-center space-x-2 p-3 bg-blue-500/10 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors font-mono text-sm"
                       >
-                        <Upload className="w-4 h-4" />
-                        <span>INSERIMENTO MANUALE</span>
+                        <UserPlus className="w-4 h-4" />
+                        <span>GESTORI</span>
                       </button>
                       <button
                         onClick={() => {
-                          // Vai ai gestori del torneo
                           setActiveTab('tournaments');
-                          // Il torneo rimarrà selezionato
                         }}
                         className="flex items-center justify-center space-x-2 p-3 bg-purple-500/10 border border-purple-500/30 text-purple-400 rounded-lg hover:bg-purple-500/20 transition-colors font-mono text-sm"
                       >
@@ -1933,7 +1588,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             submissions={pendingSubmissions}
             onApprove={approveSubmission}
             onReject={rejectSubmission}
-            onManualSubmit={() => selectedTournament ? setShowManualSubmission(true) : alert('Seleziona prima un torneo')}
+            onManualSubmit={() => selectedTournament ? alert('Usa il sistema di assegnazione punteggi nel tab ASSEGNA PUNTEGGI') : alert('Seleziona prima un torneo')}
           />
         )}
 
@@ -1944,6 +1599,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             setManagers={setManagers}
             auditLogs={auditLogs}
             setAuditLogs={setAuditLogs}
+            createManager={createManagerWithSync}
+            updateManager={updateManagerWithSync}
+            deleteManager={deleteManagerWithSync}
           />
         )}
 
@@ -1972,12 +1630,12 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             © 2025 BM Solution - Sviluppo Applicazioni
           </div>
           <div className="text-xs text-ice-blue/30 font-mono mt-1">
-            Advanced Tournament Management System v4.2 - Multi-Device Sync with Debug Tools
+            Advanced Tournament Management System v4.3 - Clean Production Version
           </div>
         </div>
       </div>
 
-      {/* IMPORTANT: Pass tournaments and setTournaments props to TournamentCreator */}
+      {/* Tournament Creator */}
       <TournamentCreator
         isOpen={showTournamentCreator}
         onClose={() => setShowTournamentCreator(false)}
@@ -1996,19 +1654,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         isOpen={showOBSPlugin}
         onClose={() => setShowOBSPlugin(false)}
       />
-
-      {/* Manual Submission Modal */}
-      {showManualSubmission && selectedTournament && (
-        <ManualSubmission
-          isOpen={showManualSubmission}
-          onClose={() => setShowManualSubmission(false)}
-          teams={Object.values(teams).filter(team => team.tournamentId === selectedTournament)}
-          tournament={tournaments[selectedTournament]}
-          onSubmit={handleManualSubmission}
-          submitterName="Admin"
-          submitterType="admin"
-        />
-      )}
 
       {/* Manual Score Assignment Modal */}
       {showScoreAssignment && selectedTournament && (
