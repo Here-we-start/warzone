@@ -17,7 +17,7 @@ import { Team, Match, TeamStats, PendingSubmission, ScoreAdjustment, Manager, Au
 import { generateUniqueTeamCode } from '../utils/teamCodeGenerator';
 import { logAction } from '../utils/auditLogger';
 import ApiService from '../services/api';
-import html2canvas from 'html2canvas';
+// ✅ RIMOSSO L'IMPORT PROBLEMATICO: import html2canvas from 'html2canvas';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -48,6 +48,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [showScoreAssignment, setShowScoreAssignment] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // ✅ NUOVA FUNZIONE HELPER PER SCREENSHOT CON IMPORT DINAMICO
+  const captureScreenshot = async (element: HTMLElement, options: any = {}) => {
+    try {
+      console.log('📸 [SCREENSHOT] Caricamento html2canvas...');
+      
+      // Import dinamico - carica html2canvas solo quando necessario
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+      
+      console.log('✅ [SCREENSHOT] html2canvas caricato con successo');
+      
+      // Configurazione ottimizzata per screenshot
+      const defaultOptions = {
+        backgroundColor: null,
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: true,
+        ...options
+      };
+      
+      const canvas = await html2canvas(element, defaultOptions);
+      console.log('✅ [SCREENSHOT] Screenshot catturato con successo');
+      
+      return canvas;
+    } catch (error: any) {
+      console.error('❌ [SCREENSHOT] Errore durante il caricamento di html2canvas:', error);
+      alert(`Funzione screenshot non disponibile: ${error.message}`);
+      return null;
+    }
+  };
 
   // ✅ FUNZIONE DI DEBUG TEMPORANEA
   const debugDatabaseConnection = async () => {
