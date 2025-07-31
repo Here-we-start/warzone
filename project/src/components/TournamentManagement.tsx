@@ -10,7 +10,7 @@ import { Team, Match, PendingSubmission, ScoreAdjustment, Manager, AuditLog, Tou
 import { generateUniqueTeamCode } from '../utils/teamCodeGenerator';
 import { logAction } from '../utils/auditLogger';
 import ApiService from '../services/api';
-import html2canvas from 'html2canvas';
+// ✅ RIMOSSO L'IMPORT PROBLEMATICO: import html2canvas from 'html2canvas';
 
 interface TournamentManagementProps {
   tournamentId: string;
@@ -59,6 +59,63 @@ export default function TournamentManagement({
   const [selectedLobby, setSelectedLobby] = useState(1);
   const [selectedSlot, setSelectedSlot] = useState(1);
   const [teamName, setTeamName] = useState('');
+
+  // ✅ NUOVA FUNZIONE PER EXPORT IMMAGINE CON IMPORT DINAMICO
+  const exportImageWithDynamicImport = async () => {
+    const element = document.getElementById('tournament-leaderboard');
+    if (!element) {
+      alert('Elemento classifica non trovato');
+      return;
+    }
+
+    try {
+      console.log('📸 [EXPORT] Caricamento html2canvas...');
+      
+      // Import dinamico - carica html2canvas solo quando necessario
+      const html2canvasModule = await import('html2canvas');
+      const html2canvas = html2canvasModule.default;
+      
+      console.log('✅ [EXPORT] html2canvas caricato con successo');
+      
+      // Configurazione ottimizzata per export
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#0a0a0a',
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: true
+      });
+      
+      console.log('✅ [EXPORT] Immagine generata con successo');
+      
+      // Download dell'immagine
+      const url = canvas.toDataURL('image/png', 1.0);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tournament.name.toLowerCase().replace(/\s+/g, '_')}_leaderboard.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      console.log('✅ [EXPORT] Download completato');
+
+      // Log action
+      logAction(
+        auditLogs,
+        setAuditLogs,
+        'EXPORT_IMAGE',
+        `Classifica esportata come immagine per torneo ${tournament.name}`,
+        'admin',
+        'admin',
+        { tournamentId, format: 'PNG' }
+      );
+      
+    } catch (error: any) {
+      console.error('❌ [EXPORT] Errore durante l\'export dell\'immagine:', error);
+      alert(`Errore nell'export dell'immagine: ${error.message}`);
+    }
+  };
 
   const tournament = tournaments[tournamentId];
   if (!tournament) return null;
@@ -815,31 +872,8 @@ export default function TournamentManagement({
     );
   };
 
-  const exportImage = async () => {
-    const element = document.getElementById('tournament-leaderboard');
-    if (!element) return;
-
-    try {
-      const canvas = await html2canvas(element);
-      const url = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${tournament.name.toLowerCase().replace(/\s+/g, '_')}_leaderboard.png`;
-      a.click();
-
-      logAction(
-        auditLogs,
-        setAuditLogs,
-        'EXPORT_IMAGE',
-        `Classifica esportata come immagine per torneo ${tournament.name}`,
-        'admin',
-        'admin',
-        { tournamentId, format: 'PNG' }
-      );
-    } catch (error) {
-      console.error('Error generating image:', error);
-    }
-  };
+  // ✅ SOSTITUITA: Usa la nuova funzione con import dinamico
+  const exportImage = exportImageWithDynamicImport;
 
   const leaderboard = getLeaderboard();
 
